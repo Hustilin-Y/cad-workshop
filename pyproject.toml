@@ -2,6 +2,7 @@
 name = "cad-workshop"
 version = "0.1.0"
 description = "Параметрические детали и ремиксы под 3D-печать на Bambu Lab P2S"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "build123d>=0.13.0",
