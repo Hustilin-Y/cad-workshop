@@ -142,6 +142,40 @@ def overhang_fraction(mesh: trimesh.Trimesh, angle_deg: float = OVERHANG_DEG) ->
     return float(mesh.area_faces[down & ~on_bed].sum() / mesh.area)
 
 
+EXPECTED_DELTA_REL_TOL = 0.01  # ±1% от ожидаемого изменения объёма (критерий ТЗ)
+
+
+def compare_to_original(
+    original: trimesh.Trimesh,
+    result: trimesh.Trimesh,
+    report: Report,
+    expected_delta_mm3: float | None = None,
+) -> None:
+    """Проверка 7: что правка ремикса изменила и не задела ли лишнего."""
+    v0, v1 = float(original.volume), float(result.volume)
+    delta = v1 - v0
+    pct = delta / v0 * 100 if v0 else float("nan")
+    report.add("7. Объём vs оригинал", "info", f"{v0:.1f} → {v1:.1f} мм³ ({delta:+.1f} мм³, {pct:+.2f}%)")
+
+    e0, e1 = original.extents, result.extents
+    dims = " × ".join(f"{a:.2f}" for a in e0) + " → " + " × ".join(f"{b:.2f}" for b in e1)
+    changed = [ax for ax, a, b in zip("XYZ", e0, e1) if abs(a - b) > 0.01]
+    shift = result.bounds[0] - original.bounds[0]
+    moved = np.abs(shift).max() > 0.01
+    note = f"габариты изменились по {', '.join(changed)}" if changed else "габариты те же"
+    if moved:
+        note += f"; модель сдвинута на ({shift[0]:+.2f}, {shift[1]:+.2f}, {shift[2]:+.2f}) мм"
+    report.add("7. Габариты vs оригинал", "info", f"{dims} мм — {note}")
+
+    if abs(delta) < 1e-3 and not changed:
+        report.add("7. Правка", "warn", "результат совпадает с оригиналом — правка ничего не изменила?")
+    if expected_delta_mm3 is not None:
+        err = abs(delta - expected_delta_mm3)
+        limit = abs(expected_delta_mm3) * EXPECTED_DELTA_REL_TOL
+        level = "ok" if err <= limit else "warn"
+        report.add("7. Ожидаемое изменение", level, f"ожидалось {expected_delta_mm3:+.1f} мм³, получено {delta:+.1f} (расхождение {err:.1f}, допуск ±{limit:.1f})")
+
+
 def _check_overhangs(mesh: trimesh.Trimesh, report: Report) -> None:
     frac = overhang_fraction(mesh)
     report.add("6. Нависания", "info", f"{frac * 100:.1f}% площади нависает круче {OVERHANG_DEG:g}° в текущей ориентации")

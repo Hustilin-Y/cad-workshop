@@ -1,6 +1,7 @@
 """CLI CAD-мастерской: `uv run cad.py <команда>`.
 
   new part <имя>    создать parts/<имя>/ из шаблона
+  new remix <имя> <файл>  создать remix/<имя>/, оригинал в source/ (только чтение), сразу inspect
   build <папка>     собрать model.py/remix.py, экспорт, превью, проверки, отчёт
   preview <путь>    только PNG-превью (папка модели или файл STL/3MF/STEP)
   check <файл>      проверки любого файла, включая чужой
@@ -10,8 +11,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import re
+import shutil
+import stat
 import sys
 import time
 from datetime import date
@@ -49,6 +53,10 @@ def _parser() -> argparse.ArgumentParser:
     np_ = new_sub.add_parser("part", help="деталь с нуля: parts/<имя>/")
     np_.add_argument("name")
     np_.set_defaults(func=cmd_new_part)
+    nr = new_sub.add_parser("remix", help="ремикс чужой модели: remix/<имя>/, оригинал копируется в source/")
+    nr.add_argument("name")
+    nr.add_argument("file", type=Path)
+    nr.set_defaults(func=cmd_new_remix)
 
     p = sub.add_parser("build", help="собрать модель")
     p.add_argument("path", type=Path)
@@ -120,8 +128,10 @@ TEMPLATES = ROOT / "templates"
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
-def _render_template(src: Path, dst: Path, name: str) -> None:
+def _render_template(src: Path, dst: Path, name: str, extra: dict[str, str] | None = None) -> None:
     text = src.read_text(encoding="utf-8").replace("{{name}}", name).replace("{{date}}", date.today().isoformat())
+    for key, value in (extra or {}).items():
+        text = text.replace(key, value)
     dst.write_text(text, encoding="utf-8")
 
 
@@ -161,6 +171,10 @@ def cmd_build(args) -> int:
     expected_bodies = int(getattr(module, "EXPECTED_BODIES", 1))
     section = args.section or getattr(module, "SECTION", None)
     out_dir = folder / "out"
+    source = folder / module.SOURCE if getattr(module, "SOURCE", None) else None
+    if source is not None and not source.is_file():
+        raise UserError(f"SOURCE = {module.SOURCE!r}: файл не найден в {_rel(folder)}")
+    source_hash = _sha256(source) if source else None
 
     result = run_model(module, profile)
     if isinstance(result, trimesh.Trimesh):
@@ -179,6 +193,8 @@ def cmd_build(args) -> int:
         for c in check_mesh(mesh_3mf, profile, expected_bodies).checks[:3]:
             if c.level == "fail":
                 report.add(f"3MF {c.name}", "fail", c.message)
+    if source:
+        _check_source(folder, source, source_hash, mesh, module, report)
 
     png = render_preview(mesh, out_dir / f"{name}.png", name, section=section)
     print(f"  PNG  {_rel(png)}")
@@ -191,6 +207,60 @@ def cmd_build(args) -> int:
         return 1
     print(f"Готово за {elapsed:.1f} с. Откройте STL/3MF в Bambu Studio и убедитесь, что нет предупреждений о сетке.")
     return 0
+
+
+def _check_source(folder: Path, source: Path, hash_before: str, result_mesh, module, report) -> None:
+    """Оригинал не тронут (хэш до/после сборки и записанный в SOURCE.md) + проверка 7."""
+    from cadlib.checks import compare_to_original
+    from cadlib.meshio import load_mesh
+
+    if _sha256(source) != hash_before:
+        report.add("Оригинал", "fail", f"{_rel(source)} изменился во время сборки — remix.py пишет в source/")
+    recorded = _recorded_hash(folder / "SOURCE.md")
+    if recorded and recorded != hash_before:
+        report.add("Оригинал", "fail", f"хэш {source.name} не совпадает с записанным в SOURCE.md — исходник подменён или изменён")
+    elif recorded:
+        report.add("Оригинал", "ok", f"{source.name} не изменён (SHA-256 совпадает с SOURCE.md)")
+    compare_to_original(load_mesh(source), result_mesh, report, getattr(module, "EXPECTED_VOLUME_DELTA", None))
+
+
+def _recorded_hash(source_md: Path) -> str | None:
+    if not source_md.exists():
+        return None
+    match = re.search(r"SHA-256:\s*`?([0-9a-f]{64})", source_md.read_text(encoding="utf-8"))
+    return match.group(1) if match else None
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def cmd_new_remix(args) -> int:
+    from cadlib.meshio import SUPPORTED
+
+    original = args.file.resolve()
+    if not original.is_file():
+        raise UserError(f"файл не найден: {args.file}")
+    ext = original.suffix.lower()
+    if ext not in SUPPORTED:
+        raise UserError(f"формат {ext} не поддерживается, нужны: {', '.join(SUPPORTED)}")
+    folder = _new_folder("remix", args.name)
+    source_dir = folder / "source"
+    source_dir.mkdir()
+    copy = source_dir / original.name
+    shutil.copy2(original, copy)
+    copy.chmod(stat.S_IREAD)  # только чтение: случайная запись упадёт с ошибкой
+    digest = _sha256(copy)
+
+    is_step = ext in (".step", ".stp")
+    replacements = {"{{file}}": original.name, "{{sha256}}": digest}
+    _render_template(TEMPLATES / ("remix_step.py" if is_step else "remix_mesh.py"), folder / "remix.py", args.name, replacements)
+    _render_template(TEMPLATES / "remix_SOURCE.md", folder / "SOURCE.md", args.name, replacements)
+    _render_template(TEMPLATES / "remix_README.md", folder / "README.md", args.name, replacements)
+
+    print(f"Создано: {_rel(folder)}  (source/{original.name} только для чтения, remix.py, SOURCE.md, README.md)")
+    print("Заполните в SOURCE.md ссылку, автора и лицензию.\n")
+    return cmd_inspect(argparse.Namespace(file=copy))
 
 
 def cmd_preview(args) -> int:
