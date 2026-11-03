@@ -1,5 +1,6 @@
 """CLI CAD-мастерской: `uv run cad.py <команда>`.
 
+  new part <имя>    создать parts/<имя>/ из шаблона
   build <папка>     собрать model.py/remix.py, экспорт, превью, проверки, отчёт
   preview <путь>    только PNG-превью (папка модели или файл STL/3MF/STEP)
   check <файл>      проверки любого файла, включая чужой
@@ -10,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import re
 import sys
 import time
+from datetime import date
 from pathlib import Path
 from types import ModuleType
 
@@ -40,6 +43,12 @@ def _parser() -> argparse.ArgumentParser:
     def profile_flags(p: argparse.ArgumentParser) -> None:
         p.add_argument("--nozzle", type=float, help="сопло, мм (по умолчанию из printer.toml)")
         p.add_argument("--material", help="пластик: PLA/PETG/ABS/ASA (по умолчанию из printer.toml)")
+
+    p = sub.add_parser("new", help="создать папку детали из шаблона")
+    new_sub = p.add_subparsers(dest="kind", required=True)
+    np_ = new_sub.add_parser("part", help="деталь с нуля: parts/<имя>/")
+    np_.add_argument("name")
+    np_.set_defaults(func=cmd_new_part)
 
     p = sub.add_parser("build", help="собрать модель")
     p.add_argument("path", type=Path)
@@ -105,6 +114,34 @@ def _profile(args):
 
 
 # --- команды -----------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parent
+TEMPLATES = ROOT / "templates"
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def _render_template(src: Path, dst: Path, name: str) -> None:
+    text = src.read_text(encoding="utf-8").replace("{{name}}", name).replace("{{date}}", date.today().isoformat())
+    dst.write_text(text, encoding="utf-8")
+
+
+def _new_folder(kind_dir: str, name: str) -> Path:
+    if not NAME_RE.match(name):
+        raise UserError(f"имя «{name}»: только строчные латинские буквы, цифры и дефис (например wall-hook)")
+    folder = ROOT / kind_dir / name
+    if folder.exists():
+        raise UserError(f"{_rel(folder)} уже существует")
+    folder.mkdir(parents=True)
+    return folder
+
+
+def cmd_new_part(args) -> int:
+    folder = _new_folder("parts", args.name)
+    _render_template(TEMPLATES / "part_model.py", folder / "model.py", args.name)
+    _render_template(TEMPLATES / "part_README.md", folder / "README.md", args.name)
+    print(f"Создано: {_rel(folder)}  (model.py, README.md)")
+    print(f"Дальше: заполнить параметры в model.py и `uv run cad.py build {_rel(folder)}`")
+    return 0
 
 
 def cmd_build(args) -> int:

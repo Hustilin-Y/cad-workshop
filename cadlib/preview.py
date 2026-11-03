@@ -98,10 +98,13 @@ def _draw_view(ax, mesh: trimesh.Trimesh, name: str, basis: np.ndarray, labels: 
     edge_rgba = np.tile(EDGE_COLOR, (len(segs), 1))
     fill = np.vstack([face_rgba, np.zeros((len(segs), 4))])
     stroke = np.vstack([face_rgba, edge_rgba])           # у граней обводка в цвет грани, иначе видны швы
-    widths = np.concatenate([np.full(len(tris), 0.2), np.full(len(segs), EDGE_WIDTH)])
+    widths = np.concatenate([np.full(len(tris), 0.3), np.full(len(segs), EDGE_WIDTH)])
+    # Сглаживание только у рёбер: у граней оно даёт светлые щели между соседними треугольниками.
+    antialiased = np.concatenate([np.zeros(len(tris), bool), np.ones(len(segs), bool)])
     order = np.argsort(depth, kind="stable")
     ax.add_collection(PolyCollection(
-        [polys[i] for i in order], facecolors=fill[order], edgecolors=stroke[order], linewidths=widths[order], closed=False,
+        [polys[i] for i in order], facecolors=fill[order], edgecolors=stroke[order], linewidths=widths[order],
+        antialiaseds=antialiased[order], closed=False,
     ))
 
     pts = tris[:, :, :2].reshape(-1, 2)
