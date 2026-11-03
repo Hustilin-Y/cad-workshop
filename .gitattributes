@@ -1,1 +1,6 @@
 * text=auto eol=lf
+*.stl binary
+*.3mf binary
+*.step binary
+*.stp binary
+*.png binary
