@@ -1,0 +1,28 @@
+[project]
+name = "cad-workshop"
+version = "0.1.0"
+description = "Параметрические детали и ремиксы под 3D-печать на Bambu Lab P2S"
+requires-python = ">=3.12"
+dependencies = [
+    "build123d>=0.13.0",
+    "lxml>=6.1.3",
+    "manifold3d>=3.5.4",
+    "matplotlib>=3.11.2",
+    "networkx>=3.7",
+    "numpy>=2.5.4",
+    "ocp-viewer>=1.2.0",
+    "ocp-vscode>=4.2.0",
+    "trimesh>=5.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.uv]
+link-mode = "copy"   # кэш uv и проект на разных дисках, hardlink невозможен
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

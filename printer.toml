@@ -1,0 +1,43 @@
+# Профиль принтера и допуски. Все модели берут значения отсюда, а не хардкодят.
+# Ответы на развилки ТЗ (2026-11-03): сопло 0.4, Windows, PNG + OCP-вьюер,
+# выход STEP+STL+3MF, приватный GitHub, пластик по умолчанию PLA.
+
+[printer]
+model = "Bambu Lab P2S"
+build_volume_mm = [256, 256, 256]   # официальные данные Bambu Lab
+bed_margin_mm = 5                   # запас до края стола при проверке габаритов
+nozzle_mm = 0.4                     # активное сопло; сменить на одно из [nozzles.*]
+material = "PLA"                    # пластик по умолчанию; сменить на один из [materials.*]
+
+# Профили сопел. min_wall = 3 периметра; меняется вместе с nozzle_mm выше.
+[nozzles."0.2"]
+min_wall_mm = 0.6
+layer_mm = 0.1
+[nozzles."0.4"]
+min_wall_mm = 1.2
+layer_mm = 0.2
+[nozzles."0.6"]
+min_wall_mm = 1.8
+layer_mm = 0.3
+[nozzles."0.8"]
+min_wall_mm = 2.4
+layer_mm = 0.4
+
+[tolerances]           # стартовые значения для сопла 0.4 и PLA, уточняются калибровкой
+hole_clearance_mm = 0.2      # к диаметру отверстия под вал/винт
+press_fit_mm = 0.05
+slide_fit_mm = 0.3
+
+# Поправки к допускам по пластику (прибавляются к [tolerances]) и подсказки.
+[materials.PLA]
+clearance_add_mm = 0.0
+note = "жёсткий, точный; плывёт от 55 °C, не для салона авто и кипятка"
+[materials.PETG]
+clearance_add_mm = 0.05
+note = "вязкий, ударопрочный, до ~75 °C; чуть больше зазоры, тянет нити"
+[materials.ABS]
+clearance_add_mm = 0.1
+note = "до ~95 °C, даёт усадку ~0.5–0.7 %; печатать с закрытой крышкой"
+[materials.ASA]
+clearance_add_mm = 0.1
+note = "как ABS, но УФ-стойкий, для улицы; закрытая камера"
