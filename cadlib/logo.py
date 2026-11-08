@@ -203,18 +203,22 @@ def _check_footprint(body: mf.Manifold, footprint: mf.CrossSection, frame: np.nd
     under = (body ^ below).volume()
     if over > 0.01 * area:
         raise ValueError("лого не помещается: над гранью в этом месте есть материал (грань не ровная или не наружная)")
-    if under < 0.98 * area * 0.28:
-        raise ValueError("лого не помещается: под ним не сплошная грань (край, скругление, отверстие или углубление)")
+    missing = area - under / 0.28        # мм² площади, под которой нет материала
+    if missing > 0.1:                    # абсолютный допуск: даже малый залёт на отверстие — тонкая стенка
+        raise ValueError(f"лого не помещается: под ним не сплошная грань на {missing:.1f} мм² "
+                         "(край, скругление, отверстие или углубление ближе допустимого отступа)")
 
 
 def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: str = "emboss",
-               base: float = 0.8, step: float = 0.4, check: bool = True):
+               base: float = 0.8, step: float = 0.4, check: bool = True, margin: float = 0.8):
     """Поставить лого-барельеф на ровную грань детали. Возвращает trimesh (STEP у такой детали не будет).
 
     body   — тело build123d, trimesh или manifold;
     origin — центр лого на поверхности грани, normal — наружная нормаль, up — куда смотрят уши;
     mode   — "emboss": барельеф над гранью (высота base + 2·step);
-             "deboss": ниша по силуэту с канавкой DEBOSS_GAP, барельеф внутри заподлицо с гранью.
+             "deboss": ниша по силуэту с канавкой DEBOSS_GAP, барельеф внутри заподлицо с гранью;
+    margin — сколько сплошной грани нужно вокруг лого (по умолчанию 2 линии сопла 0.4): иначе
+             стенка между лого и краем или отверстием выйдет тоньше, чем принтер может напечатать.
     """
     from .mesh import from_manifold, to_manifold
 
@@ -222,15 +226,18 @@ def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: s
     frame = _frame(origin, normal, up)
     sil = layers(height)["silhouette"]
     total = base + 2 * step
+    def with_margin(cs):
+        return cs.offset(margin, mf.JoinType.Round, 2.0, SEGMENTS) if margin > 0 else cs
+
     if mode == "emboss":
         if check:
-            _check_footprint(m, sil, frame)
+            _check_footprint(m, with_margin(sil), frame)
         logo = logo_relief(height, base + LOGO_EMBED, step).translate((0, 0, -LOGO_EMBED))
         result = m + logo.transform(frame)
     elif mode == "deboss":
         niche = sil.offset(DEBOSS_GAP, mf.JoinType.Round, 2.0, SEGMENTS)
         if check:
-            _check_footprint(m, niche, frame)
+            _check_footprint(m, with_margin(niche), frame)
         pocket = _extrude(niche, -total, 1.0)
         logo = logo_relief(height, base + LOGO_EMBED, step).translate((0, 0, -total - LOGO_EMBED))
         result = (m - pocket.transform(frame)) + logo.transform(frame)
