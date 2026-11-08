@@ -62,11 +62,14 @@ LIP = 0.8               # защёлкивающий бортик колыбел
 LIP_H = 1.6             # высота бортика над лампой (со скосом-заходом сверху)
 
 # --- ласточкин хвост, мм ---
+# Профиль «ромб»: от шейки паз расширяется под 45°, идёт ровно и под 45° сужается к концу.
+# Классический хвост (грани ~15° к горизонту) в планке, которая печатается потолком вниз,
+# даёт свод паза почти горизонтально в воздухе — провисает. 45° принтер печатает без поддержек.
 DT_NECK = 8.0           # шип у ступицы (по Z)
-DT_TIP = 12.0           # шип на конце (по Z) — расширение и держит
-DT_DEPTH = 8.0          # длина шипа (по X)
-DT_BACK = 3.0           # задняя стенка гнезда в планке — упор
-DETENT = 0.6            # бугорок-защёлка на шипе: выступ
+DT_WIDE = 12.0          # самая широкая часть шипа (по Z): уступы по 2 мм и держат
+DT_DEPTH = 8.0          # длина шипа (по X); ≥ DT_WIDE − DT_NECK, чтобы оба скоса по 45° поместились
+DT_STOP = 3.0           # передняя стенка гнезда в планке — упор; сзади гнездо открыто
+DETENT = 0.4            # бугорок-защёлка на шипе: выступ
 DETENT_R = 1.4          # радиус бугорка
 
 # --- отделка, мм (см. cadlib/finish.py: вертикальные при печати рёбра скругляем, у стола — фаска) ---
@@ -97,17 +100,35 @@ def _yz_prism(points, x0: float, x1: float):
     return Pos(x0 - bb.min.X, 0, 0) * solid
 
 
-def _dovetail(clear: float, depth_extra: float):
-    """Профиль шипа в XZ для правого плеча: от торца планки x = MOUNT_L/2 внутрь (−X)."""
-    x0 = MOUNT_L / 2
-    zc = -MOUNT_H / 2
-    neck, tip = DT_NECK / 2 + clear, DT_TIP / 2 + clear
-    x_tip = x0 - DT_DEPTH - depth_extra
-    return [(x0 + EPS, zc - neck), (x_tip, zc - tip), (x_tip, zc + tip), (x0 + EPS, zc + neck)]
+def _dovetail(clear: float = 0.0):
+    """Профиль шипа «ромб» в XZ для правого плеча: от торца планки x = MOUNT_L/2 внутрь (−X).
+
+    clear > 0 — контур гнезда: шип, смещённый наружу на clear по всем граням (честный зазор и на скосах).
+    """
+    import manifold3d as mf
+
+    x0, zc = MOUNT_L / 2, -MOUNT_H / 2
+    n, w = DT_NECK / 2, DT_WIDE / 2
+    run = w - n                                   # 45°: сдвиг по X равен расширению по Z
+    xt = x0 - DT_DEPTH
+    pts = [(x0 + EPS, zc - n), (x0 - run, zc - w), (xt + run, zc - w), (xt, zc - n),
+           (xt, zc + n), (xt + run, zc + w), (x0 - run, zc + w), (x0 + EPS, zc + n)]
+    if clear <= 0:
+        return pts
+    cs = mf.CrossSection([pts], mf.FillRule.Positive)
+    if cs.area() == 0:
+        cs = mf.CrossSection([pts[::-1]], mf.FillRule.Positive)
+    return [tuple(v) for v in cs.offset(clear, mf.JoinType.Miter, 2.0).to_polygons()[0]]
+
+
+def _tongue_y() -> tuple[float, float]:
+    """Шип по Y: от задней плоскости (стол при печати плеча) до упора спереди с зазором."""
+    return -ARM_D / 2, ARM_D / 2 - DT_STOP - 0.3
 
 
 def _detent_pos():
-    return (MOUNT_L / 2 - DT_DEPTH, ARM_D / 2 - 6.0, -MOUNT_H / 2)
+    """Бугорок у переднего конца шипа, лунка — у упора гнезда: щелчок, когда плечо дошло до места."""
+    return (MOUNT_L / 2 - DT_DEPTH, _tongue_y()[1] - 3.5, -MOUNT_H / 2)
 
 
 # --- потолочная планка -----------------------------------------------------------
@@ -129,11 +150,11 @@ def _mount_finish(body):
 def mount(p):
     c = p.slide_fit_mm / 2
     body = _mount_finish(Pos(0, 0, -MOUNT_H / 2) * Box(MOUNT_L, ARM_D, MOUNT_H))
-    y_back = -ARM_D / 2 + DT_BACK
+    # Гнездо открыто сзади (плечо вдвигается сзади вперёд), спереди — упор DT_STOP.
     for side in (1, -1):
-        socket = _xz_prism(_dovetail(c, 0.3), y_back, ARM_D / 2 + 1)
+        socket = _xz_prism(_dovetail(c), -ARM_D / 2 - 1, ARM_D / 2 - DT_STOP)
         dimple = Pos(*_detent_pos()) * Sphere(DETENT_R + 0.1)
-        tool = socket + Pos(-0.3, 0, 0) * dimple
+        tool = socket + Pos(-c, 0, 0) * dimple
         body -= tool if side == 1 else mirror(tool, about=Plane.YZ)
 
     # Саморез утоплен: от лицевой (комнатной) стороны цилиндрическая выемка под головку на SCREW_RECESS,
@@ -188,8 +209,8 @@ def arm_right_handed(p, right: bool):
     # Ступица и шип.
     x_hub0 = MOUNT_L / 2
     body = Pos(x_hub0 + HUB_L / 2, 0, -MOUNT_H / 2) * Box(HUB_L, ARM_D, MOUNT_H)
-    tongue_y0 = y_back + DT_BACK + 0.3
-    body += _xz_prism(_dovetail(0, 0), tongue_y0, ARM_D / 2)
+    # Шип от задней плоскости — при печати плеча он стоит на столе, а не висит консолью.
+    body += _xz_prism(_dovetail(), *_tongue_y())
     dx, dy, dz_ = _detent_pos()
     body += Pos(dx + DETENT_R - DETENT, dy, dz_) * Sphere(DETENT_R)
 
