@@ -44,10 +44,12 @@ MOUNT_L = 70.0          # длина потолочной планки, зада
 SCREW_D = 6.0           # саморезы 6 мм с потаем, задано пользователем
 SCREW_X = 14.0          # саморезы на ±SCREW_X от центра планки
 SCREW_HEAD_D = None     # None = Ø12 по DIN 7997; лучше замерить
+SCREW_RECESS_FRAC = 1 / 3  # потай утоплен на эту долю толщины планки, задано пользователем
 
 # --- конструкция, выбрано по умолчанию, мм ---
 ARM_D = 38.0            # глубина (по Y) планки, ступицы и колыбелек: торец 32 + зазор + стенки по 2.8
 MOUNT_H = 18.0          # высота планки и ступицы плеча
+SCREW_RECESS = MOUNT_H * SCREW_RECESS_FRAC  # 6 мм: глубина выемки под головку самореза
 HUB_L = 12.0            # длина ступицы плеча по X
 BEAM_T = 8.0            # толщина балки и стойки в плоскости XZ
 BEAM_D = 10.0           # глубина балки и стойки по Y (от задней плоскости)
@@ -134,9 +136,15 @@ def mount(p):
         tool = socket + Pos(-0.3, 0, 0) * dimple
         body -= tool if side == 1 else mirror(tool, about=Plane.YZ)
 
-    screw = f.wood_screw_countersunk_hole(SCREW_D, MOUNT_H, p, SCREW_HEAD_D)
-    for x in (SCREW_X, -SCREW_X):   # вход снизу (со стороны комнаты), вверх в потолок
-        body -= Pos(x, 0, -MOUNT_H) * Rot(180, 0, 0) * screw
+    # Саморез утоплен: от лицевой (комнатной) стороны цилиндрическая выемка под головку на SCREW_RECESS,
+    # на её дне — потай. Вход снизу (из комнаты), вверх в потолок.
+    head_d = (SCREW_HEAD_D or f.WOOD_SCREW_HEAD[SCREW_D]) + p.hole_clearance_mm
+    screw = f.wood_screw_countersunk_hole(SCREW_D, MOUNT_H - SCREW_RECESS, p, SCREW_HEAD_D)
+    well = Pos(0, 0, -SCREW_RECESS / 2 + 0.005) * Cylinder(head_d / 2 + 0.005, SCREW_RECESS + 0.01)
+    z_room = -MOUNT_H
+    for x in (SCREW_X, -SCREW_X):
+        body -= Pos(x, 0, z_room) * Rot(180, 0, 0) * well
+        body -= Pos(x, 0, z_room + SCREW_RECESS) * Rot(180, 0, 0) * screw
     return body
 
 
