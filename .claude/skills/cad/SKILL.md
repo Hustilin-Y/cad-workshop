@@ -73,7 +73,12 @@ description: Проектирование деталей под 3D-печать 
 from build123d import Box, Cylinder, Pos, Rot, fillet, chamfer, Axis, extrude, SlotCenterToCenter
 from cadlib import fasteners as f   # clearance_hole, counterbore_hole, countersunk_hole, nut_pocket, insert_hole, chamfer_ring
 from cadlib import mesh as m        # load_source, repair, subtract, add, cut, split_by_plane, scale, scale_to, drop_to_bed
+from cadlib.logo import place_logo  # лого мастерской на ровную грань: выпуклое или вдавленное
+from cadlib.threads import internal_thread_tube   # резьба для печати
+from cadlib.finish import soften, bevel           # скругления и фаски с учётом ориентации печати
 ```
+
+- Лого: `return place_logo(body, origin=(x, y, z), normal=(0, 0, 1), up=(0, 1, 0), height=18, mode="emboss")`. Функция сама проверит, что под лого ровная сплошная грань, и выдаст ошибку, если там край, скругление или отверстие.
 
 - Оси: Z вверх, стол на Z = 0, единицы — мм.
 - Тела из `fasteners` стоят верхом на Z = 0 и уходят в −Z, это сторона входа винта. На верхнюю грань: `Pos(x, y, z_top) * tool`. На грань с выходом в −X: `Pos(...) * Rot(0, 90, 0) * tool`.
