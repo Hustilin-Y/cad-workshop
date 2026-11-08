@@ -36,13 +36,25 @@ def export_all(
         # STL пишет сам OCCT (быстро), 3MF собирается из того же STL, чтобы сетки совпадали.
         stl = out_dir / f"{name}.stl"
         export_stl(shape, stl, tolerance=LINEAR_TOL_MM, angular_tolerance=ANGULAR_TOL_RAD)
+        mesh = _drop_degenerate(trimesh.load(stl, force="mesh"), stl)
         if "3mf" in formats:
-            written |= export_mesh(trimesh.load(stl, force="mesh"), out_dir, name, ("3mf",))
+            written |= export_mesh(mesh, out_dir, name, ("3mf",))
         if "stl" in formats:
             written["stl"] = stl
         else:
             stl.unlink()
     return {fmt: written[fmt] for fmt in formats}
+
+
+def _drop_degenerate(mesh: trimesh.Trimesh, stl: Path) -> trimesh.Trimesh:
+    """OCCT пишет треугольники нулевой площади на полюсах сфер: убираем их и переписываем STL."""
+    keep = mesh.nondegenerate_faces()
+    if keep.all():
+        return mesh
+    mesh.update_faces(keep)
+    mesh.remove_unreferenced_vertices()
+    mesh.export(stl, file_type="stl")
+    return mesh
 
 
 def export_mesh(

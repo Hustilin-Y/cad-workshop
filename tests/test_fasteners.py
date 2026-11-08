@@ -67,6 +67,15 @@ def test_insert_hole_depth_and_override():
     assert _hole_diameters(body, 6)[0] == pytest.approx(4.2, abs=0.05)
 
 
+def test_wood_screw_countersink():
+    body = _block_minus(f.wood_screw_countersunk_hole(6.0, 10, P))
+    assert _hole_diameters(body, 5)[0] == pytest.approx(6.0 + f.WOOD_SCREW_CLEARANCE + P.hole_clearance_mm, abs=0.05)
+    # На глубине 1 мм конус 90° на 2 мм уже головки Ø12 (+ зазор).
+    assert _hole_diameters(body, 9)[0] == pytest.approx(12.0 + P.hole_clearance_mm - 2.0, abs=0.08)
+    with pytest.raises(ValueError, match="head_d"):
+        f.wood_screw_countersunk_hole(7.0, 10, P)
+
+
 def test_unknown_size():
     with pytest.raises(ValueError, match="M6"):
         f.clearance_hole("M6", 5, P)

@@ -73,11 +73,29 @@ def counterbore_hole(size: str, depth: float, p: Profile, head_depth: float | No
 def countersunk_hole(size: str, depth: float, p: Profile) -> Part:
     """Отверстие под потайной винт 90°: конус от диаметра головки до отверстия."""
     m = metric(size)
-    head_d = m.csk_d + p.hole_clearance_mm
-    hole_d = m.clear_fine + p.hole_clearance_mm
+    return _countersink(m.clear_fine + p.hole_clearance_mm, m.csk_d + p.hole_clearance_mm, depth)
+
+
+# Саморезы по дереву/дюбелю с потайной головкой 90°: d → диаметр головки dk.
+# Источник: DIN 7997 (шурупы с потайной головкой), dk ≈ 2·d. У саморезов разных марок
+# головка отличается на ±0.5 мм — при возможности замерить и передать head_d явно.
+WOOD_SCREW_HEAD: dict[float, float] = {3.0: 6.0, 3.5: 7.0, 4.0: 8.0, 4.5: 9.0, 5.0: 10.0, 6.0: 12.0}
+WOOD_SCREW_CLEARANCE = 0.4  # к диаметру резьбы: аналог ISO 273 fine, чтобы резьба шла свободно и не рвала пластик
+
+
+def wood_screw_countersunk_hole(d: float, depth: float, p: Profile, head_d: float | None = None) -> Part:
+    """Сквозное отверстие под потайной саморез диаметром d (мм): резьба проходит свободно, головка утоплена."""
+    if head_d is None:
+        if d not in WOOD_SCREW_HEAD:
+            raise ValueError(f"Саморез {d} мм не описан, есть: {', '.join(f'{k:g}' for k in WOOD_SCREW_HEAD)}; или передайте head_d")
+        head_d = WOOD_SCREW_HEAD[d]
+    return _countersink(d + WOOD_SCREW_CLEARANCE + p.hole_clearance_mm, head_d + p.hole_clearance_mm, depth)
+
+
+def _countersink(hole_d: float, head_d: float, depth: float) -> Part:
     cone_h = (head_d - hole_d) / 2  # 90°: высота равна разности радиусов
     cone = Pos(0, 0, -cone_h / 2 + EPS / 2) * Cone(hole_d / 2, head_d / 2 + EPS, cone_h + EPS)
-    return clearance_hole(size, depth, p) + cone
+    return _down_cylinder(hole_d, depth) + cone
 
 
 def chamfer_ring(d: float, size: float = 0.6) -> Part:
