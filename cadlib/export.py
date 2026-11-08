@@ -72,9 +72,57 @@ def export_mesh(
         if fmt not in MESH_FORMATS:
             raise ValueError(f"Неизвестный формат: {fmt}")
         path = out_dir / f"{name}.{fmt}"
-        mesh.export(path, file_type=fmt)
+        if fmt == "3mf":
+            write_3mf(mesh, path, name)
+        else:
+            mesh.export(path, file_type=fmt)
         written[fmt] = path
     return written
+
+
+_3MF_CONTENT_TYPES = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+    "</Types>"
+)
+_3MF_RELS = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+    'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>'
+    "</Relationships>"
+)
+
+
+def write_3mf(mesh: trimesh.Trimesh, path: Path, name: str) -> None:
+    """3MF только по базовой спецификации (core 2015/02), без расширений.
+
+    trimesh пишет 3MF с production-расширением (p:UUID): Bambu Studio принимает такой файл
+    за свой проект, ищет в нём настройки и ругается «invalid config». Простой core-3MF
+    открывается как обычная геометрия.
+    """
+    import zipfile
+    from xml.sax.saxutils import quoteattr
+
+    v = mesh.vertices
+    f = mesh.faces
+    vertices = "".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in v)
+    triangles = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in f)
+    model = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<model unit="millimeter" xml:lang="en-US" '
+        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        '<metadata name="Application">cad-workshop</metadata>'
+        f'<resources><object id="1" name={quoteattr(name)} type="model"><mesh>'
+        f"<vertices>{vertices}</vertices><triangles>{triangles}</triangles>"
+        '</mesh></object></resources><build><item objectid="1"/></build></model>'
+    )
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", _3MF_CONTENT_TYPES)
+        z.writestr("_rels/.rels", _3MF_RELS)
+        z.writestr("3D/3dmodel.model", model)
 
 
 def shape_to_mesh(shape: Shape) -> trimesh.Trimesh:

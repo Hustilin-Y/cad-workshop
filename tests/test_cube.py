@@ -26,6 +26,20 @@ def test_cube_20mm(tmp_path):
     assert png.stat().st_size > 10_000
 
 
+def test_3mf_is_plain_core(tmp_path):
+    """3MF без production-расширения: иначе Bambu Studio пишет «invalid config»."""
+    import zipfile
+
+    files = export_all(Pos(0, 0, 10) * Box(20, 20, 20), tmp_path, "cube", ("3mf",))
+    with zipfile.ZipFile(files["3mf"]) as z:
+        model = z.read("3D/3dmodel.model").decode("utf-8")
+        assert sorted(z.namelist()) == ["3D/3dmodel.model", "[Content_Types].xml", "_rels/.rels"]
+    assert "production" not in model and "p:UUID" not in model
+    assert 'name="cube"' in model
+    mesh = load_mesh(files["3mf"])
+    assert mesh.is_watertight and abs(mesh.volume - 8000) < 1
+
+
 def test_profile_nozzle_and_material():
     p = load_profile(nozzle=0.6, material="petg")
     assert p.min_wall_mm == 1.8
