@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run by `assistant addon enable cad-workshop`: the workshop's Python packages and the one system
+# library they need, then a quick import check. install.sh filled in the workshop's folder.
+set -euo pipefail
+
+CAD_HOME="{{CAD_HOME}}"
+export PATH="$HOME/.local/bin:$PATH"
+
+[ -f "$CAD_HOME/cad.py" ] || { echo "error: no cad-workshop at $CAD_HOME; run its multiclaude/install.sh again" >&2; exit 1; }
+command -v uv >/dev/null || { echo "error: the CAD workshop needs uv: https://docs.astral.sh/uv/" >&2; exit 1; }
+
+# OpenCascade (OCP) loads libGL.so.1 even with no display; Ubuntu Server doesn't have it.
+if ! ldconfig -p 2>/dev/null | grep -q 'libGL\.so\.1'; then
+  command -v apt-get >/dev/null || { echo "error: install libGL (libgl1) yourself" >&2; exit 1; }
+  echo "Installing libgl1 (OpenCascade needs libGL.so.1)…"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libgl1 >/dev/null
+fi
+
+(cd "$CAD_HOME" && uv sync --frozen)
+(cd "$CAD_HOME" && uv run --frozen python -c "import build123d, manifold3d, trimesh, matplotlib") ||
+  { echo "error: the workshop's packages don't import; see above" >&2; exit 1; }
+echo "The CAD workshop is ready in $CAD_HOME."

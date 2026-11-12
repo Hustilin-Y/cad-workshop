@@ -76,6 +76,10 @@ templates/          шаблоны для new part / new remix
 tests/              pytest
 ```
 
+## Через Telegram (multiclaude)
+
+Мастерская ставится как аддон в [multiclaude](https://github.com/korsicheg/multiclaude), Telegram-бот, где у каждого свой Claude Code. Тогда деталь можно заказать из чата, а ассистент пришлёт PNG-превью и 3MF. Установка описана в [multiclaude/addon/README.md](multiclaude/addon/README.md). На сервере с Ubuntu нужен ещё `libgl1`, его ставит `setup` аддона. Сборка на слабом ноутбуке занимает 10–60 с и до 0.7 ГБ памяти, чужая модель на миллион треугольников — до 1.2 ГБ.
+
 ## Чего здесь нет
 
 Нет связи с принтером, слайсинга, скачивания по ссылке и многоцвета (AMS). Скрипты не выходят в сеть, это проверяет тест.

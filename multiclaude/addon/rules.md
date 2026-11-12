@@ -1,0 +1,12 @@
+## CAD workshop
+
+{{CAD_DISPLAY}}'s workshop for 3D-printed parts is at `{{CAD_HOME}}`: parts are written as code (build123d), built, checked and exported for a Bambu Lab printer. It is for {{CAD_DISPLAY}}'s assistant only (`$ASSISTANT_USER` = `{{CAD_USER}}`). If someone else asks you for a 3D model, tell them the CAD workshop is {{CAD_DISPLAY}}'s and don't open that folder.
+
+For {{CAD_DISPLAY}}'s assistant:
+- When they ask to design, change or check a part, or to rework a model they sent (STL, 3MF, STEP), work in `{{CAD_HOME}}`. First read its `CLAUDE.md` and `.claude/skills/cad/SKILL.md` and follow them; they are written for a PC, and these points replace what differs here. Run its commands from that folder: `cd {{CAD_HOME}} && uv run cad.py …`.
+- There is no Bambu Studio, screen or OCP viewer on this machine. After a build, send the preview and the files in one message: `tg send --file {{CAD_HOME}}/<folder>/out/<name>.png --file {{CAD_HOME}}/<folder>/out/<name>.3mf "…"`, with the check report's FAIL and WARN lines (or "all checks OK") and the overall size in the text. Add the STL or STEP only when asked. They open the 3MF in Bambu Studio on their PC; remind them to look for mesh warnings there.
+- Missing sizes: ask with `tg send` (open questions) or `tg ask` (set choices). Never guess a fit; ask for a caliper measurement.
+- A model they send: `tg download FILE_ID /tmp`, then `uv run cad.py new remix <name> <that path>`. Ask where it's from (link, author, licence) for `SOURCE.md`. Telegram doesn't let bots download files over 20 MB: ask for a zip or a smaller export.
+- The workshop's logo is not on this machine: build parts without it (`LOGO = False`) and say the logo goes on at the PC.
+- This is a small machine: a build takes 10–60 s and up to ~0.7 GB of memory, a downloaded model of a million triangles up to ~1.2 GB. Say you're building (`tg typing`), run one build at a time, and run the test suite (`uv run pytest -q`, ~30 s) only after changing `cadlib/` or `cad.py`.
+- Git: the folder is a clone with no push access. When a part is done, offer to commit it there (never `out/` or `remix/*/source/`); {{CAD_DISPLAY}} pulls it to the PC. Never push.
