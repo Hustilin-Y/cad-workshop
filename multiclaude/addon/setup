@@ -19,4 +19,11 @@ fi
 (cd "$CAD_HOME" && uv sync --frozen)
 (cd "$CAD_HOME" && uv run --frozen python -c "import build123d, manifold3d, trimesh, matplotlib") ||
   { echo "error: the workshop's packages don't import; see above" >&2; exit 1; }
+
+# multiclaude/cad caps a build's memory in a systemd user scope. Assistants run under a system
+# service, with no login session, so the user's systemd manager must run without one (linger).
+if command -v loginctl >/dev/null && ! loginctl show-user "$(id -un)" -p Linger 2>/dev/null | grep -q '=yes'; then
+  echo "Turning on linger for $(id -un), so builds can run under a memory cap (multiclaude/cad)…"
+  sudo loginctl enable-linger "$(id -un)" || echo "warning: no linger: builds will run without a memory cap" >&2
+fi
 echo "The CAD workshop is ready in $CAD_HOME."

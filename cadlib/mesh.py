@@ -164,6 +164,39 @@ def translate(mesh: trimesh.Trimesh, offset) -> trimesh.Trimesh:
     return out
 
 
+def rotate(mesh: trimesh.Trimesh, degrees, about: str = "center") -> trimesh.Trimesh:
+    """Поворот на (rx, ry, rz) градусов вокруг осей X, затем Y, затем Z.
+
+    about='center' — вокруг центра габаритов, 'min' — вокруг нижнего угла. Модель после поворота
+    может уйти под стол: обычно дальше drop_to_bed. Например, положить на бок: rotate(m, (90, 0, 0)).
+    """
+    rx, ry, rz = (float(a) for a in np.broadcast_to(np.asarray(degrees, dtype=float), (3,)))
+    pivot = mesh.bounds[0] if about == "min" else mesh.bounds.mean(axis=0)
+    turn = trimesh.transformations.euler_matrix(*np.radians([rx, ry, rz]), axes="sxyz")
+    out = mesh.copy()
+    out.apply_transform(
+        trimesh.transformations.translation_matrix(pivot) @ turn @ trimesh.transformations.translation_matrix(-pivot)
+    )
+    return out
+
+
+def mirror(mesh: trimesh.Trimesh, axis: str = "x") -> trimesh.Trimesh:
+    """Зеркальная копия по оси ('x', 'y' или 'z') относительно центра габаритов: левая деталь из правой.
+
+    Нормали остаются наружу: trimesh разворачивает обход треугольников при отражении.
+    """
+    if axis not in ("x", "y", "z"):
+        raise ValueError(f"ось «{axis}»: нужна 'x', 'y' или 'z'")
+    i = "xyz".index(axis)
+    center = mesh.bounds.mean(axis=0)
+    flip = np.eye(4)
+    flip[i, i] = -1.0
+    flip[i, 3] = 2 * center[i]
+    out = mesh.copy()
+    out.apply_transform(flip)
+    return out
+
+
 def drop_to_bed(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
     """Опустить низ модели на Z=0."""
     return translate(mesh, (0, 0, -mesh.bounds[0][2]))

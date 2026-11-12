@@ -12,6 +12,8 @@ dependencies = [
     "matplotlib>=3.11.2",
     "networkx>=3.7",
     "numpy>=2.5.4",
+    "pillow>=11.0",       # tools/logo_extract.py
+    "scipy>=1.14",        # проверки: выпуклая оболочка основания, связность площадок
     "trimesh>=5.2.0",
 ]
 

@@ -198,8 +198,9 @@ def cmd_build(args) -> int:
     report = check_mesh(mesh, profile, expected_bodies, print_down)
     if "3mf" in files and "stl" in files:
         mesh_3mf = load_mesh(files["3mf"])
-        for c in check_mesh(mesh_3mf, profile, expected_bodies).checks[:3]:
-            if c.level == "fail":
+        for c in check_mesh(mesh_3mf, profile, expected_bodies).checks:
+            # 3MF сверяется только по своей сетке (проверки 1–2); стол и опора у неё те же, что у STL.
+            if c.level == "fail" and c.name.startswith(("1.", "2.")):
                 report.add(f"3MF {c.name}", "fail", c.message)
     if source:
         _check_source(folder, source, source_hash, mesh, module, report)

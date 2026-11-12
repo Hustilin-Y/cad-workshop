@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# cad: `uv run cad.py ...` with a memory cap, for a small server shared with other services.
+#
+#   multiclaude/cad build parts/<name>      same arguments as cad.py
+#
+# The run gets its own systemd scope with MemoryMax ($CAD_MEMORY_MAX, 1400M by default) and no
+# swap, so a huge downloaded mesh is killed with a clear message instead of pushing the machine
+# into swap or the OOM killer. It needs the user's systemd manager running even with nobody logged
+# in (`loginctl enable-linger`, done by the add-in's setup); without it, it runs uncapped and says so.
+set -uo pipefail
+
+CAD_HOME="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+LIMIT="${CAD_MEMORY_MAX:-1400M}"
+export PATH="$HOME/.local/bin:$PATH"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+cmd=(uv run --project "$CAD_HOME" python "$CAD_HOME/cad.py" "$@")
+
+if systemd-run --user --scope --quiet true >/dev/null 2>&1; then
+  systemd-run --user --scope --quiet -p MemoryMax="$LIMIT" -p MemorySwapMax=0 "${cmd[@]}"
+  status=$?
+  if [ "$status" = 137 ]; then
+    echo "cad: stopped at the memory cap ($LIMIT): this model is too heavy for this machine." >&2
+    echo "     Simplify the mesh first (trimesh simplify_quadric_decimation) or build it on the PC." >&2
+  fi
+  exit "$status"
+fi
+echo "cad: no systemd user manager here, running without a memory cap" >&2
+exec "${cmd[@]}"

@@ -10,14 +10,12 @@
 Сборка: uv run cad.py build parts/lamp-hanger
 """
 
-import importlib.util
 from pathlib import Path
 
 from cadlib.logo import logo_available, place_logo
+from cadlib.shared import load_module
 
-_spec = importlib.util.spec_from_file_location("hanger", Path(__file__).resolve().parent / "hanger.py")
-hanger = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(hanger)
+hanger = load_module(Path(__file__).with_name("hanger.py"))
 
 # --- лого, мм ---
 LOGO = True

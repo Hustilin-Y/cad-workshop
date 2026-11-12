@@ -6,12 +6,11 @@
 Сборка: uv run cad.py build parts/lamp-hanger-arm-left
 """
 
-import importlib.util
 from pathlib import Path
 
-_spec = importlib.util.spec_from_file_location("hanger", Path(__file__).resolve().parent.parent / "lamp-hanger" / "hanger.py")
-hanger = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(hanger)
+from cadlib.shared import load_module
+
+hanger = load_module(Path(__file__).resolve().parent.parent / "lamp-hanger" / "hanger.py")
 
 NAME = "lamp-hanger-arm-left"
 EXPECTED_BODIES = 1

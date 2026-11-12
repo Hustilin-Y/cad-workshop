@@ -21,4 +21,4 @@ assistant addon enable cad-workshop
 ## Files
 
 - `rules.md`: what the assistants know while it's on: who uses it, where, and how it differs from working on a PC.
-- `setup`: the packages, libGL, an import check.
+- `setup`: the packages, libGL, an import check, and linger for the user, so `multiclaude/cad` (cad.py under a 1.4 GB memory cap) has a systemd user manager to run in.

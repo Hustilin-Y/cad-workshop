@@ -71,8 +71,10 @@ description: Проектирование деталей под 3D-печать 
 
 ```python
 from build123d import Box, Cylinder, Pos, Rot, fillet, chamfer, Axis, extrude, SlotCenterToCenter
-from cadlib import fasteners as f   # clearance_hole, counterbore_hole, countersunk_hole, nut_pocket, insert_hole, chamfer_ring
-from cadlib import mesh as m        # load_source, repair, subtract, add, cut, split_by_plane, scale, scale_to, drop_to_bed
+from cadlib import fasteners as f   # clearance_hole, counterbore_hole, countersunk_hole, wood_screw_countersunk_hole, nut_pocket, insert_hole, chamfer_ring
+from cadlib import mesh as m        # load_source, repair, subtract, add, intersect, cut, split_by_plane, scale, scale_to, rotate, mirror, translate, drop_to_bed
+from cadlib.text import label       # надпись: extrude(Pos(x, y, z) * label("M3", 4), amount=0.6); голый Text на Linux ломает сетку
+from cadlib.shared import load_module  # общий код соседней детали: load_module(Path(__file__).parent.parent / "lamp-hanger" / "hanger.py")
 from cadlib.logo import place_logo  # лого мастерской на ровную грань: выпуклое или вдавленное
 from cadlib.threads import internal_thread_tube   # резьба для печати
 from cadlib.finish import soften, bevel           # скругления и фаски с учётом ориентации печати
@@ -81,6 +83,7 @@ from cadlib.finish import soften, bevel           # скругления и фа
 - Лого: `return place_logo(body, origin=(x, y, z), normal=(0, 0, 1), up=(0, 1, 0), height=18, mode="emboss")`. Функция сама проверит, что под лого ровная сплошная грань, и выдаст ошибку, если там край, скругление или отверстие.
 
 - Оси: Z вверх, стол на Z = 0, единицы — мм.
+- Ремикс STL: положить на бок — `m.drop_to_bed(m.rotate(mesh, (90, 0, 0)))`; левая деталь из правой — `m.mirror(mesh, "x")`.
 - Тела из `fasteners` стоят верхом на Z = 0 и уходят в −Z, это сторона входа винта. На верхнюю грань: `Pos(x, y, z_top) * tool`. На грань с выходом в −X: `Pos(...) * Rot(0, 90, 0) * tool`.
 - Атрибуты модуля, которые читает `build`: `NAME`, `FORMATS`, `EXPECTED_BODIES`, `SECTION` (`"y"` или `("y", 12.5)`), `PRINT_DOWN` (сторона на стол при печати, `"-y"`; задать, если модель печатается не нижней в файле стороной, иначе проверки опоры и нависаний считаются не для той ориентации), для ремикса `SOURCE` и `EXPECTED_VOLUME_DELTA`.
 - Сопло или пластик на одну сборку: `--nozzle 0.6 --material petg`.
