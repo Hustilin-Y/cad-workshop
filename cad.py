@@ -76,6 +76,7 @@ def _parser() -> argparse.ArgumentParser:
     p = sub.add_parser("check", help="проверки файла")
     p.add_argument("file", type=Path)
     p.add_argument("--bodies", type=int, default=1, help="ожидаемое число тел")
+    p.add_argument("--down", help="какая сторона модели ложится на стол: +x/-x/+y/-y/+z/-z (по умолчанию -z, как в файле)")
     profile_flags(p)
     p.set_defaults(func=cmd_check)
 
@@ -175,6 +176,7 @@ def cmd_build(args) -> int:
     name = getattr(module, "NAME", folder.name)
     formats = tuple(getattr(module, "FORMATS", DEFAULT_FORMATS))
     expected_bodies = int(getattr(module, "EXPECTED_BODIES", 1))
+    print_down = _print_down(getattr(module, "PRINT_DOWN", None), "PRINT_DOWN")
     section = args.section or getattr(module, "SECTION", None)
     out_dir = folder / "out"
     source = folder / module.SOURCE if getattr(module, "SOURCE", None) else None
@@ -193,7 +195,7 @@ def cmd_build(args) -> int:
         print(f"  {fmt.upper():4} {_rel(path)}  {path.stat().st_size / 1024:.0f} КБ")
 
     mesh = load_mesh(files["stl"]) if "stl" in files else load_mesh(next(iter(files.values())))
-    report = check_mesh(mesh, profile, expected_bodies)
+    report = check_mesh(mesh, profile, expected_bodies, print_down)
     if "3mf" in files and "stl" in files:
         mesh_3mf = load_mesh(files["3mf"])
         for c in check_mesh(mesh_3mf, profile, expected_bodies).checks[:3]:
@@ -298,7 +300,7 @@ def cmd_check(args) -> int:
     from cadlib.checks import check_mesh
 
     mesh = _load_file(args.file)
-    report = check_mesh(mesh, _profile(args), args.bodies)
+    report = check_mesh(mesh, _profile(args), args.bodies, _print_down(args.down, "--down"))
     print(f"== {args.file.name}")
     print(report.format())
     return 1 if report.failed else 0
@@ -328,6 +330,19 @@ def _load_file(path: Path):
         return load_mesh(path)
     except ValueError as e:
         raise UserError(str(e)) from e
+
+
+def _print_down(value, where: str):
+    """Сторона на стол из модели (PRINT_DOWN) или флага (--down), проверенная заранее."""
+    if value is None:
+        return None
+    from cadlib.checks import down_vector
+
+    try:
+        down_vector(value)
+    except ValueError as e:
+        raise UserError(f"{where}: {e}") from e
+    return value
 
 
 def _out_dir_for(file: Path) -> Path:

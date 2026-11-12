@@ -82,9 +82,9 @@ from cadlib.finish import soften, bevel           # скругления и фа
 
 - Оси: Z вверх, стол на Z = 0, единицы — мм.
 - Тела из `fasteners` стоят верхом на Z = 0 и уходят в −Z, это сторона входа винта. На верхнюю грань: `Pos(x, y, z_top) * tool`. На грань с выходом в −X: `Pos(...) * Rot(0, 90, 0) * tool`.
-- Атрибуты модуля, которые читает `build`: `NAME`, `FORMATS`, `EXPECTED_BODIES`, `SECTION` (`"y"` или `("y", 12.5)`), для ремикса `SOURCE` и `EXPECTED_VOLUME_DELTA`.
+- Атрибуты модуля, которые читает `build`: `NAME`, `FORMATS`, `EXPECTED_BODIES`, `SECTION` (`"y"` или `("y", 12.5)`), `PRINT_DOWN` (сторона на стол при печати, `"-y"`; задать, если модель печатается не нижней в файле стороной, иначе проверки опоры и нависаний считаются не для той ориентации), для ремикса `SOURCE` и `EXPECTED_VOLUME_DELTA`.
 - Сопло или пластик на одну сборку: `--nozzle 0.6 --material petg`.
-- Чужой файл без правок: `uv run cad.py check <файл>`, `uv run cad.py inspect <файл>`, `uv run cad.py preview <файл> --section z`.
+- Чужой файл без правок: `uv run cad.py check <файл>` (`--down -y`, если печатать другой стороной), `uv run cad.py inspect <файл>`, `uv run cad.py preview <файл> --section z`.
 
 ## Чего не делать
 

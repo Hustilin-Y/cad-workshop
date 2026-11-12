@@ -1,12 +1,14 @@
 """Проверки готовой сетки перед печатью (раздел 6 ТЗ).
 
 Проверки 1–3 (manifold, объём, стол) при провале валят сборку, остальные только предупреждают.
+Стол, опора, нависания (3, 5, 6) считаются в ориентации печати: если модель лежит в файле
+не так, как печатается, print_down говорит, какая её сторона смотрит в стол.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, Sequence
 
 import numpy as np
 import trimesh
@@ -20,7 +22,17 @@ MIN_SANE_SIZE_MM = 5.0
 MAX_SANE_SIZE_MM = 1000.0
 BASE_Z_TOL_MM = 0.01
 MIN_BASE_AREA_MM2 = 1.0
+# Узкое основание у высокой детали: меньше этой доли от проекции на стол при высоте больше
+# TALL_FACTOR × ширины пятна (корень из площади) — оторвётся или опрокинется («гриб на ножке»).
+MIN_BASE_SHARE = 0.10
+TALL_FACTOR = 2.0
 OVERHANG_DEG = 45.0
+OVERHANG_WARN_SHARE = 0.25  # больше четверти площади нависает круче 45° — без поддержек не обойтись
+ISLAND_PROBE_MM = 0.05      # срезы чуть выше и ниже кандидата в «острова»
+ISLAND_MERGE_MM = 1.0       # остров, сросшийся с деталью за 1 мм (5 слоёв по 0.2), принтер проходит как нависание
+MAX_ISLAND_CANDIDATES = 50  # органика даёт сотни мелких минимумов; проверяем самые крупные
+
+AXIS_NAMES = {"+x": (1, 0, 0), "-x": (-1, 0, 0), "+y": (0, 1, 0), "-y": (0, -1, 0), "+z": (0, 0, 1), "-z": (0, 0, -1)}
 
 
 @dataclass
@@ -46,15 +58,55 @@ class Report:
         return "\n".join(f"[{marks[c.level]}] {c.name}: {c.message}" for c in self.checks)
 
 
-def check_mesh(mesh: trimesh.Trimesh, profile: Profile, expected_bodies: int = 1) -> Report:
+def check_mesh(
+    mesh: trimesh.Trimesh,
+    profile: Profile,
+    expected_bodies: int = 1,
+    print_down: str | Sequence[float] | None = None,
+) -> Report:
+    """print_down: сторона модели, которая при печати лежит на столе ('-y' или вектор); None — как в файле (−Z)."""
     report = Report()
     _check_manifold(mesh, report)
     _check_volume_and_bodies(mesh, report, expected_bodies)
-    _check_fits_bed(mesh, profile, report)
+    printed = orient_for_print(mesh, print_down)
+    if print_down is not None:
+        report.add("Ориентация", "info", f"проверки 3, 5, 6 — как при печати: на стол ложится сторона {_axis_label(print_down)}")
+    _check_fits_bed(printed, profile, report)
     _check_units(mesh, report)
-    _check_base(mesh, report)
-    _check_overhangs(mesh, report)
+    _check_base(printed, report)
+    _check_support(printed, report)
+    _check_overhangs(printed, report)
     return report
+
+
+def down_vector(print_down: str | Sequence[float]) -> np.ndarray:
+    if isinstance(print_down, str):
+        key = print_down.strip().lower()
+        key = key if key[0] in "+-" else "+" + key
+        if key not in AXIS_NAMES:
+            raise ValueError(f"сторона «{print_down}»: нужно одно из {', '.join(AXIS_NAMES)} или вектор (x, y, z)")
+        return np.array(AXIS_NAMES[key], float)
+    v = np.asarray(print_down, float)
+    if v.shape != (3,) or not np.linalg.norm(v):
+        raise ValueError(f"print_down {print_down!r}: нужен ненулевой вектор (x, y, z)")
+    return v / np.linalg.norm(v)
+
+
+def _axis_label(print_down) -> str:
+    v = down_vector(print_down)
+    for name, axis in AXIS_NAMES.items():
+        if np.allclose(v, axis):
+            return name.upper()
+    return "(" + ", ".join(f"{c:.2f}" for c in v) + ")"
+
+
+def orient_for_print(mesh: trimesh.Trimesh, print_down: str | Sequence[float] | None) -> trimesh.Trimesh:
+    """Копия, повёрнутая так, чтобы print_down смотрела в −Z (на стол); без print_down — сама сетка."""
+    if print_down is None:
+        return mesh
+    turned = mesh.copy()
+    turned.apply_transform(trimesh.geometry.align_vectors(down_vector(print_down), [0, 0, -1]))
+    return turned
 
 
 def _check_manifold(mesh: trimesh.Trimesh, report: Report) -> None:
@@ -120,6 +172,16 @@ def base_area(mesh: trimesh.Trimesh) -> float:
     return float(mesh.area_faces[on_base].sum())
 
 
+def footprint_area(mesh: trimesh.Trimesh) -> float:
+    """Площадь выпуклой оболочки проекции на стол, мм²: «сколько места деталь занимает сверху»."""
+    from scipy.spatial import ConvexHull, QhullError
+
+    try:
+        return float(ConvexHull(mesh.vertices[:, :2]).volume)  # у 2D-оболочки volume — площадь
+    except QhullError:
+        return 0.0
+
+
 def _check_base(mesh: trimesh.Trimesh, report: Report) -> None:
     area = base_area(mesh)
     if area < MIN_BASE_AREA_MM2:
@@ -129,8 +191,154 @@ def _check_base(mesh: trimesh.Trimesh, report: Report) -> None:
             f"плоского основания почти нет ({area:.2f} мм²) — повернуть деталь в Bambu Studio "
             "(Lay on Face) или нужны поддержки",
         )
+        return
+    footprint = footprint_area(mesh)
+    share = area / footprint if footprint else 1.0
+    height = float(mesh.extents[2])
+    if share < MIN_BASE_SHARE and height > TALL_FACTOR * np.sqrt(area):
+        report.add(
+            "5. Основание",
+            "warn",
+            f"на столе {area:.1f} мм² — {share * 100:.0f}% от проекции детали ({footprint:.0f} мм²) "
+            f"при высоте {height:.0f} мм: может оторваться или опрокинуться. Повернуть (Lay on Face), "
+            "добавить brim или поддержки",
+        )
     else:
-        report.add("5. Основание", "ok", f"площадь на столе {area:.1f} мм²")
+        report.add("5. Основание", "ok", f"площадь на столе {area:.1f} мм² ({share * 100:.0f}% проекции)")
+
+
+def _check_support(mesh: trimesh.Trimesh, report: Report) -> None:
+    """Тела, не касающиеся стола, и «острова» — места, где печать начнётся в воздухе."""
+    floating = floating_bodies(mesh)
+    if floating:
+        where = ", ".join(f"{h:.1f}" for h in floating[:5])
+        report.add(
+            "5. Тела над столом",
+            "warn",
+            f"{len(floating)} из тел не касается стола (низ на высоте {where} мм): напечатается только на поддержках",
+        )
+    islands, healed, checked, total = find_islands(mesh)
+    notes = []
+    if healed:
+        notes.append(f"мелких островов, которые в пределах {ISLAND_MERGE_MM:g} мм срастаются с деталью: {healed}")
+    if checked < total:
+        notes.append(f"проверено {checked} самых крупных из {total} кандидатов")
+    note = f" ({'; '.join(notes)})" if notes else ""
+    if islands:
+        where = "; ".join(f"Z {h:.1f} мм у ({x:.0f}, {y:.0f})" for x, y, h in islands[:3])
+        more = f" и ещё {len(islands) - 3}" if len(islands) > 3 else ""
+        report.add(
+            "5. Острова",
+            "warn",
+            f"мест, где печать начнётся в воздухе: {len(islands)} — {where}{more}. "
+            f"Нужны поддержки или другая ориентация{note}",
+        )
+    elif not floating:
+        report.add("5. Опора", "ok", f"каждый слой опирается на предыдущий{note}")
+
+
+def floating_bodies(mesh: trimesh.Trimesh) -> list[float]:
+    """Высоты низа тел, которые не касаются стола (по возрастанию)."""
+    z_min = mesh.bounds[0][2]
+    lows = sorted(float(b.bounds[0][2] - z_min) for b in mesh.split(only_watertight=False))
+    return [h for h in lows if h > BASE_Z_TOL_MM]
+
+
+def find_islands(mesh: trimesh.Trimesh) -> tuple[list[tuple[float, float, float]], int, int]:
+    """Острова как в слайсере: контур слоя, который не опирается на слой под ним.
+
+    Кандидаты — «нижние площадки» сетки: связные участки одной высоты без соседей ниже, к которым
+    сходятся грани, смотрящие вниз (дно кармана смотрит вверх и кандидатом не считается). Кандидат —
+    остров, только если контур среза чуть выше него не пересекается со срезом чуть ниже: потолок
+    над нишей или подбородок фигурки держатся на остальном сечении слоя, это мост или нависание.
+    Тела над столом не считаются (о них отдельное предупреждение). Остров, который в пределах
+    ISLAND_MERGE_MM срастается с опёртой частью слоя (губа у подбородка, деталь лого в нише),
+    принтер проходит как нависание: такие только считаются.
+    Возвращает ([(x, y, высота над столом)], сросшихся, проверено кандидатов, всего кандидатов).
+    """
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    from .mesh import to_manifold
+
+    z = mesh.vertices[:, 2]
+    z_min = float(z.min())
+    n = len(z)
+    edges = mesh.edges_unique
+    dz = z[edges[:, 0]] - z[edges[:, 1]]
+    has_lower = np.zeros(n, bool)
+    has_lower[edges[dz > BASE_Z_TOL_MM, 0]] = True
+    has_lower[edges[dz < -BASE_Z_TOL_MM, 1]] = True
+    flat = np.abs(dz) <= BASE_Z_TOL_MM
+    graph = coo_matrix((np.ones(int(flat.sum())), (edges[flat, 0], edges[flat, 1])), shape=(n, n))
+    count, label = connected_components(graph, directed=False)
+
+    any_lower = np.zeros(count, bool)
+    np.logical_or.at(any_lower, label, has_lower)
+    height = np.full(count, np.inf)
+    np.minimum.at(height, label, z)
+    facing = np.zeros(count)  # сумма площадь × nz граней, касающихся площадки: < 0 — смотрит вниз
+    weight = mesh.area_faces * mesh.face_normals[:, 2]
+    for col in range(3):
+        np.add.at(facing, label[mesh.faces[:, col]], weight)
+    on_floating = _floating_vertex_mask(mesh)
+    floating_comp = np.zeros(count, bool)
+    np.logical_or.at(floating_comp, label, on_floating)
+
+    candidates = np.flatnonzero(~any_lower & (height > z_min + BASE_Z_TOL_MM) & (facing < 0) & ~floating_comp)
+    total = len(candidates)
+    if not total:
+        return [], 0, 0, 0
+    candidates = candidates[np.argsort(facing[candidates])][:MAX_ISLAND_CANDIDATES]  # самые крупные первыми
+    try:
+        solid = to_manifold(mesh)
+    except ValueError:
+        return [], 0, 0, total  # незамкнутая сетка: проверка 1 уже провалена
+
+    import manifold3d
+
+    slices: dict[float, object] = {}
+
+    def cut(at: float):
+        key = round(at, 4)
+        if key not in slices:
+            slices[key] = solid.slice(key)
+        return slices[key]
+
+    islands, seen, healed = [], set(), 0
+    for c in candidates:
+        h = float(height[c])
+        xy = mesh.vertices[label == c][:, :2].mean(axis=0)
+        probe = manifold3d.CrossSection.circle(0.3, 16).translate((float(xy[0]), float(xy[1])))
+        part = next((p for p in cut(h + ISLAND_PROBE_MM).decompose() if not (p ^ probe).is_empty()), None)
+        if part is None:
+            continue
+        key = (round(h, 2), tuple(np.round(part.bounds(), 2)))
+        if key in seen:
+            continue
+        seen.add(key)
+        below = cut(h - ISLAND_PROBE_MM)
+        if (part ^ below).area() > 1e-6:
+            continue  # опирается на слой ниже: мост или нависание
+        grown = next((p for p in cut(h + ISLAND_MERGE_MM).decompose() if not (p ^ probe).is_empty()), None)
+        if grown is not None and (grown ^ below).area() > 1e-6:
+            healed += 1  # через доли миллиметра срастается с деталью: принтер пройдёт как нависание
+            continue
+        islands.append((float(xy[0]), float(xy[1]), h - z_min))
+    islands.sort(key=lambda item: item[2])
+    return islands, healed, len(candidates), total
+
+
+def _floating_vertex_mask(mesh: trimesh.Trimesh) -> np.ndarray:
+    """Вершины тел, которые не касаются стола."""
+    z = mesh.vertices[:, 2]
+    labels = trimesh.graph.connected_component_labels(mesh.face_adjacency, node_count=len(mesh.faces))
+    body_low = np.full(labels.max() + 1 if len(labels) else 0, np.inf)
+    np.minimum.at(body_low, labels, z[mesh.faces].min(axis=1))
+    face_floating = body_low[labels] > z.min() + BASE_Z_TOL_MM
+    mask = np.zeros(len(z), bool)
+    mask[mesh.faces[face_floating].ravel()] = True
+    return mask
 
 
 def overhang_fraction(mesh: trimesh.Trimesh, angle_deg: float = OVERHANG_DEG) -> float:
@@ -180,4 +388,8 @@ def compare_to_original(
 
 def _check_overhangs(mesh: trimesh.Trimesh, report: Report) -> None:
     frac = overhang_fraction(mesh)
-    report.add("6. Нависания", "info", f"{frac * 100:.1f}% площади нависает круче {OVERHANG_DEG:g}° в текущей ориентации")
+    text = f"{frac * 100:.1f}% площади нависает круче {OVERHANG_DEG:g}°"
+    if frac > OVERHANG_WARN_SHARE:
+        report.add("6. Нависания", "warn", f"{text}: без поддержек не напечатать, или повернуть деталь")
+    else:
+        report.add("6. Нависания", "info", text)

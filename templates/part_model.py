@@ -15,6 +15,7 @@ HEIGHT = 10.0       # Z
 NAME = "{{name}}"
 EXPECTED_BODIES = 1
 SECTION = None      # "x" / "y" / "z" или ("y", 12.5) — разрез в превью
+PRINT_DOWN = None   # сторона на стол при печати, если не низ модели: "-y", "+z"… (проверки опоры и нависаний)
 
 
 def build(p):

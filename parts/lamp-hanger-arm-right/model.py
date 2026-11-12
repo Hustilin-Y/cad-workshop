@@ -16,6 +16,7 @@ _spec.loader.exec_module(hanger)
 NAME = "lamp-hanger-arm-right"
 EXPECTED_BODIES = 1
 SECTION = ("y", 0.0)    # разрез по центру колыбельки: виден паз под штекер
+PRINT_DOWN = "-y"       # печать лёжа на задней плоскости
 
 
 def build(p):

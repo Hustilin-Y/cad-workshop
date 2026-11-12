@@ -16,6 +16,7 @@ _spec.loader.exec_module(hanger)
 NAME = "lamp-hanger-arm-left"
 EXPECTED_BODIES = 1
 SECTION = ("y", 0.0)
+PRINT_DOWN = "-y"       # печать лёжа на задней плоскости
 
 
 def build(p):

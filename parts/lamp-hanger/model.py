@@ -27,6 +27,7 @@ LOGO_MODE = "deboss"    # "deboss" — утоплено заподлицо (по
 NAME = "lamp-hanger-mount"
 EXPECTED_BODIES = 1
 SECTION = ("y", 0.0)    # разрез через саморезы и гнёзда
+PRINT_DOWN = "+z"       # печать потолочной стороной (Z = 0) на стол, лицевая с лого сверху
 
 
 def build(p):
