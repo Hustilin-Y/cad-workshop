@@ -4,7 +4,9 @@
 Значение c, при котором посадка нужного типа, переносится в printer.toml.
 """
 
-from build123d import Align, Box, Cylinder, Pos, Text, extrude
+from build123d import Box, Cylinder, Pos, extrude
+
+from cadlib.text import label
 
 # --- параметры, мм ---
 NOMINAL_D = 8.0                                     # номинальный диаметр штыря/отверстия ключа
@@ -41,7 +43,7 @@ def plate():
     body -= [Pos(x, HOLE_ROW_Y, PLATE_T / 2) * Cylinder((NOMINAL_D + c) / 2, PLATE_T) for x, c in zip(xs, CLEARANCES)]
     pins = [Pos(x, PIN_ROW_Y, PLATE_T + PIN_H / 2) * Cylinder((NOMINAL_D - c) / 2, PIN_H) for x, c in zip(xs, CLEARANCES)]
     labels = [
-        extrude(Pos(x, LABEL_ROW_Y, PLATE_T) * Text(_label(c), font_size=LABEL_SIZE, align=(Align.CENTER, Align.CENTER)), amount=LABEL_RELIEF)
+        extrude(Pos(x, LABEL_ROW_Y, PLATE_T) * label(_label(c), LABEL_SIZE), amount=LABEL_RELIEF)
         for x, c in zip(xs, CLEARANCES)
     ]
     return body + pins + labels
@@ -58,7 +60,7 @@ def key():
     body += Pos(x1, y, PLATE_T / 2) * Cylinder(ring_r, PLATE_T)
     body -= Pos(x0, y, PLATE_T / 2) * Cylinder(NOMINAL_D / 2, PLATE_T)
     body += Pos(x1, y, PLATE_T + PIN_H / 2) * Cylinder(NOMINAL_D / 2, PIN_H)
-    text = Text(f"D{NOMINAL_D:g}", font_size=LABEL_SIZE, align=(Align.CENTER, Align.CENTER))
+    text = label(f"D{NOMINAL_D:g}", LABEL_SIZE)
     body += extrude(Pos((x0 + x1) / 2, y, PLATE_T) * text, amount=LABEL_RELIEF)
     return body
 

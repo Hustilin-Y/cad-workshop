@@ -12,12 +12,14 @@ dependencies = [
     "matplotlib>=3.11.2",
     "networkx>=3.7",
     "numpy>=2.5.4",
-    "ocp-viewer>=1.2.0",
-    "ocp-vscode>=4.2.0",
     "trimesh>=5.2.0",
 ]
 
 [dependency-groups]
+viewer = [  # живой 3D-просмотр, только на ПК: uv run --group viewer python -m ocp_viewer
+    "ocp-viewer>=1.2.0",
+    "ocp-vscode>=4.2.0",
+]
 dev = [
     "pytest>=9.2.0",
 ]

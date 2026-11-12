@@ -36,7 +36,9 @@ def export_all(
         # STL пишет сам OCCT (быстро), 3MF собирается из того же STL, чтобы сетки совпадали.
         stl = out_dir / f"{name}.stl"
         export_stl(shape, stl, tolerance=LINEAR_TOL_MM, angular_tolerance=ANGULAR_TOL_RAD)
-        mesh = _drop_degenerate(trimesh.load(stl, force="mesh"), stl)
+        mesh = trimesh.load(stl, force="mesh")
+        if drop_degenerate(mesh):
+            mesh.export(stl, file_type="stl")
         if "3mf" in formats:
             written |= export_mesh(mesh, out_dir, name, ("3mf",))
         if "stl" in formats:
@@ -46,15 +48,17 @@ def export_all(
     return {fmt: written[fmt] for fmt in formats}
 
 
-def _drop_degenerate(mesh: trimesh.Trimesh, stl: Path) -> trimesh.Trimesh:
-    """OCCT пишет треугольники нулевой площади на полюсах сфер: убираем их и переписываем STL."""
+def drop_degenerate(mesh: trimesh.Trimesh) -> bool:
+    """OCCT тесселирует полюса сфер и скругления треугольниками нулевой площади: убираем их на месте.
+
+    Без этого сетка выглядит незамкнутой и распадается на «тела». True, если что-то убрали.
+    """
     keep = mesh.nondegenerate_faces()
     if keep.all():
-        return mesh
+        return False
     mesh.update_faces(keep)
     mesh.remove_unreferenced_vertices()
-    mesh.export(stl, file_type="stl")
-    return mesh
+    return True
 
 
 def export_mesh(
@@ -106,23 +110,34 @@ def write_3mf(mesh: trimesh.Trimesh, path: Path, name: str) -> None:
     import zipfile
     from xml.sax.saxutils import quoteattr
 
-    v = mesh.vertices
-    f = mesh.faces
-    vertices = "".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in v)
-    triangles = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in f)
-    model = (
+    head = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<model unit="millimeter" xml:lang="en-US" '
         'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
         '<metadata name="Application">cad-workshop</metadata>'
-        f'<resources><object id="1" name={quoteattr(name)} type="model"><mesh>'
-        f"<vertices>{vertices}</vertices><triangles>{triangles}</triangles>"
-        '</mesh></object></resources><build><item objectid="1"/></build></model>'
+        f'<resources><object id="1" name={quoteattr(name)} type="model"><mesh><vertices>'
     )
+    tail = '</triangles></mesh></object></resources><build><item objectid="1"/></build></model>'
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", _3MF_CONTENT_TYPES)
         z.writestr("_rels/.rels", _3MF_RELS)
-        z.writestr("3D/3dmodel.model", model)
+        # Пишем кусками: одна строка на всю модель для сетки в миллион треугольников — это сотни МБ памяти.
+        with z.open("3D/3dmodel.model", "w", force_zip64=True) as out:
+            out.write(head.encode())
+            for chunk in _chunks(mesh.vertices):
+                out.write("".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in chunk).encode())
+            out.write(b"</vertices><triangles>")
+            for chunk in _chunks(mesh.faces):
+                out.write("".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in chunk).encode())
+            out.write(tail.encode())
+
+
+_3MF_CHUNK_ROWS = 50_000
+
+
+def _chunks(rows):
+    for start in range(0, len(rows), _3MF_CHUNK_ROWS):
+        yield rows[start:start + _3MF_CHUNK_ROWS]
 
 
 def shape_to_mesh(shape: Shape) -> trimesh.Trimesh:
@@ -130,4 +145,6 @@ def shape_to_mesh(shape: Shape) -> trimesh.Trimesh:
     with tempfile.TemporaryDirectory() as tmp:
         stl = Path(tmp) / "shape.stl"
         export_stl(shape, stl, tolerance=LINEAR_TOL_MM, angular_tolerance=ANGULAR_TOL_RAD)
-        return trimesh.load(stl, force="mesh", process=True)
+        mesh = trimesh.load(stl, force="mesh", process=True)
+    drop_degenerate(mesh)
+    return mesh

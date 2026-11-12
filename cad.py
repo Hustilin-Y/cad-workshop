@@ -26,8 +26,10 @@ ENTRY_FILES = ("model.py", "remix.py")
 
 
 def main(argv: list[str] | None = None) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(errors="replace")
+    # Отчёт по-русски: без явного UTF-8 вывод в трубу (Git Bash, ssh, агент) идёт в cp1252 или ASCII и превращается в «?????».
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     args = _parser().parse_args(argv)
     try:
         return args.func(args)
@@ -106,7 +108,11 @@ def run_model(module: ModuleType, profile):
     import trimesh
     from build123d import Shape
 
-    result = module.build(profile)
+    try:
+        result = module.build(profile)
+    except ValueError as e:
+        # _validate(p) модели и операции cadlib.mesh объясняют ошибку текстом; трейсбэк тут только мешает.
+        raise UserError(f"модель не собралась: {e}") from e
     if not isinstance(result, (Shape, trimesh.Trimesh)):
         raise UserError(f"build() вернула {type(result).__name__}, нужно тело build123d или trimesh.Trimesh")
     return result

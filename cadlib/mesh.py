@@ -95,6 +95,11 @@ def to_manifold(obj) -> manifold3d.Manifold:
 
 def from_manifold(m: manifold3d.Manifold) -> trimesh.Trimesh:
     out = m.to_mesh()
+    if len(out.tri_verts) == 0:
+        raise ValueError(
+            "после операции не осталось ни одного треугольника: инструмент целиком закрыл деталь "
+            "или не пересёкся с ней (для intersect). Проверьте положение и размеры инструмента."
+        )
     return trimesh.Trimesh(vertices=np.asarray(out.vert_properties[:, :3], dtype=float), faces=np.asarray(out.tri_verts), process=True)
 
 

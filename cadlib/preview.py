@@ -26,6 +26,7 @@ LIGHT_DIR = np.array([0.4, -0.6, 0.7]) / np.linalg.norm([0.4, -0.6, 0.7])
 EDGE_COLOR = np.array([0.08, 0.12, 0.22, 1.0])
 EDGE_WIDTH = 0.5
 FEATURE_DEG = 30.0  # рёбра острее этого угла рисуются линией
+PREVIEW_MAX_FACES = 150_000  # выше этого виды рисуются по упрощённой сетке (на PNG разницы не видно)
 
 
 def _iso_basis() -> np.ndarray:
@@ -56,12 +57,13 @@ def render_preview(
     if isinstance(section, (tuple, list)):
         section, section_at = section[0], float(section[1])
     size = mesh.extents
+    shown = _for_drawing(mesh)
 
     ncols = 3 if section else 2
     fig, axes = plt.subplots(2, ncols, figsize=(5.5 * ncols, 10), dpi=100)
     slots = [axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]]
     for ax, view in zip(slots, VIEWS):
-        _draw_view(ax, mesh, *view)
+        _draw_view(ax, shown, *view)
     if section:
         _draw_section(axes[0, 2], mesh, section, section_at)
         axes[1, 2].axis("off")
@@ -72,6 +74,18 @@ def render_preview(
     fig.savefig(path)
     plt.close(fig)
     return path
+
+
+def _for_drawing(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    """Упрощённая копия для видов, если треугольников больше PREVIEW_MAX_FACES.
+
+    Каждый треугольник вида — объект matplotlib: сетка в 330 тыс. граней занимала ~1 ГБ памяти,
+    скачанная модель на миллион с лишним не влезла бы в небольшой сервер. Разрез, размеры
+    и проверки считаются по исходной сетке.
+    """
+    if len(mesh.faces) <= PREVIEW_MAX_FACES:
+        return mesh
+    return mesh.simplify_quadric_decimation(face_count=PREVIEW_MAX_FACES)
 
 
 def _draw_view(ax, mesh: trimesh.Trimesh, name: str, basis: np.ndarray, labels: tuple[str, str] | None) -> None:

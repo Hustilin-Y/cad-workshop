@@ -143,6 +143,7 @@ def overhang_fraction(mesh: trimesh.Trimesh, angle_deg: float = OVERHANG_DEG) ->
 
 
 EXPECTED_DELTA_REL_TOL = 0.01  # ±1% от ожидаемого изменения объёма (критерий ТЗ)
+EXPECTED_DELTA_FLOOR_REL = 0.001  # но не меньше 0.1% объёма оригинала
 
 
 def compare_to_original(
@@ -167,11 +168,12 @@ def compare_to_original(
         note += f"; модель сдвинута на ({shift[0]:+.2f}, {shift[1]:+.2f}, {shift[2]:+.2f}) мм"
     report.add("7. Габариты vs оригинал", "info", f"{dims} мм — {note}")
 
-    if abs(delta) < 1e-3 and not changed:
+    if abs(delta) < 1e-3 and not changed and not moved:
         report.add("7. Правка", "warn", "результат совпадает с оригиналом — правка ничего не изменила?")
     if expected_delta_mm3 is not None:
         err = abs(delta - expected_delta_mm3)
-        limit = abs(expected_delta_mm3) * EXPECTED_DELTA_REL_TOL
+        # При ожидаемом нуле (перенос, поворот) 1% от нуля = 0: берём ещё пол от объёма оригинала на шум тесселяции.
+        limit = max(abs(expected_delta_mm3) * EXPECTED_DELTA_REL_TOL, abs(v0) * EXPECTED_DELTA_FLOOR_REL)
         level = "ok" if err <= limit else "warn"
         report.add("7. Ожидаемое изменение", level, f"ожидалось {expected_delta_mm3:+.1f} мм³, получено {delta:+.1f} (расхождение {err:.1f}, допуск ±{limit:.1f})")
 

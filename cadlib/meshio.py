@@ -7,6 +7,7 @@ from pathlib import Path
 import trimesh
 
 SUPPORTED = (".stl", ".3mf", ".obj", ".step", ".stp")
+MM_UNITS = ("mm", "millimeter", "millimeters")
 
 
 def load_mesh(path: Path) -> trimesh.Trimesh:
@@ -24,4 +25,7 @@ def load_mesh(path: Path) -> trimesh.Trimesh:
     loaded = trimesh.load(path, force="mesh", process=True)
     if not isinstance(loaded, trimesh.Trimesh) or len(loaded.faces) == 0:
         raise ValueError(f"Не удалось прочитать сетку из {path}")
+    # 3MF хранит единицы (unit="inch" и т. п.), trimesh их запоминает, но не пересчитывает. STL единиц не знает: считаем мм.
+    if loaded.units and loaded.units.lower() not in MM_UNITS:
+        loaded.convert_units("millimeters")
     return loaded
