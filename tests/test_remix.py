@@ -3,6 +3,7 @@
 import hashlib
 import math
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -17,7 +18,6 @@ from cadlib import mesh as m
 from cadlib.meshio import load_mesh
 
 ROOT = Path(__file__).resolve().parent.parent
-EXAMPLE = ROOT / "remix" / "example-stub"
 
 
 def _sha(path: Path) -> str:
@@ -27,21 +27,23 @@ def _sha(path: Path) -> str:
 # --- пример из репозитория ----------------------------------------------------
 
 
-def test_example_remix_volume_and_source_untouched(capsys):
-    source = EXAMPLE / "source" / "stub-block.stl"
+def test_example_remix_volume_and_source_untouched(capsys, repo_copy):
+    example = repo_copy("remix/example-stub")
+    source = example / "source" / "stub-block.stl"
     before = _sha(source)
-    assert main(["build", str(EXAMPLE)]) == 0
+    assert main(["build", str(example)]) == 0
     out = capsys.readouterr().out
     assert "[OK  ] 7. Ожидаемое изменение" in out
     assert "[OK  ] Оригинал" in out
     assert "FAIL" not in out and "WARN" not in out
-    assert _sha(source) == before == cad._recorded_hash(EXAMPLE / "SOURCE.md")
+    assert _sha(source) == before == cad._recorded_hash(example / "SOURCE.md")
 
-    module = cad.load_model(EXAMPLE)
-    delta = load_mesh(EXAMPLE / "out" / "example-stub.stl").volume - load_mesh(source).volume
+    module = cad.load_model(example)
+    delta = load_mesh(example / "out" / "example-stub.stl").volume - load_mesh(source).volume
     assert delta == pytest.approx(module.EXPECTED_VOLUME_DELTA, rel=0.01)
 
 
+@pytest.mark.skipif(not (ROOT / ".git").exists() or shutil.which("git") is None, reason="нужен git-клон проекта")
 def test_example_source_is_tracked_but_foreign_sources_are_not():
     def ignored(rel: str) -> bool:
         return subprocess.run(["git", "check-ignore", "-q", rel], cwd=ROOT).returncode == 0
@@ -73,7 +75,8 @@ def test_new_remix_stl_flow(workshop, capsys):
     assert "50.00 × 30.00 × 20.00 мм" in out                       # inspect запускается сразу
     folder = root / "remix" / "holder-fix"
     copy = folder / "source" / "holder.stl"
-    assert not os.access(copy, os.W_OK)                            # оригинал только для чтения
+    if getattr(os, "geteuid", lambda: 1)() != 0:                   # root пишет куда угодно
+        assert not os.access(copy, os.W_OK)                        # оригинал только для чтения
     assert cad._recorded_hash(folder / "SOURCE.md") == _sha(original)
 
     # Нетронутый шаблон собирается, но предупреждает, что правки нет.

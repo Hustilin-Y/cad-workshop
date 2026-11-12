@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCAN_DIRS = ("cadlib", "parts", "remix", "calibration", "templates")
+SCAN_DIRS = ("cadlib", "parts", "remix", "calibration", "templates", "tools", "tests")
 FORBIDDEN = re.compile(
     r"^\s*(import|from)\s+(socket|requests|urllib|http|httpx|aiohttp|ftplib|paho|websockets|bambulabs?)\b",
     re.MULTILINE,

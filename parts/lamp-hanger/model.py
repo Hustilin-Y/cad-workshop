@@ -36,4 +36,4 @@ def build(p):
         print("  лого: данных лого нет в этой копии проекта — планка без лого")
         return body
     # Лицевая сторона — Z = −MOUNT_H, смотрит вниз в комнату; уши лого — от зрителя, стоящего спереди (+Y).
-    return place_logo(body, (0, 0, -hanger.MOUNT_H), (0, 0, -1), up=(0, -1, 0), height=LOGO_H, mode=LOGO_MODE)
+    return place_logo(body, (0, 0, -hanger.MOUNT_H), (0, 0, -1), up=(0, -1, 0), height=LOGO_H, mode=LOGO_MODE, p=p)

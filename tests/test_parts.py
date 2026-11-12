@@ -24,20 +24,21 @@ def _expected_bracket_volume(m, hole_d: float) -> float:
     return profile * m.WIDTH - holes
 
 
-def test_bracket_builds_with_expected_volume(capsys):
-    assert main(["build", str(BRACKET)]) == 0
+def test_bracket_builds_with_expected_volume(capsys, repo_copy):
+    bracket = repo_copy("parts/example-bracket")
+    assert main(["build", str(bracket)]) == 0
     out = capsys.readouterr().out
     assert "FAIL" not in out and "WARN" not in out
 
-    module = cad.load_model(BRACKET)
+    module = cad.load_model(bracket)
     from cadlib.config import load_profile
 
     hole_d = 4.3 + load_profile().hole_clearance_mm
-    mesh = load_mesh(BRACKET / "out" / "example-bracket.stl")
+    mesh = load_mesh(bracket / "out" / "example-bracket.stl")
     assert mesh.volume == pytest.approx(_expected_bracket_volume(module, hole_d), rel=0.002)
     assert tuple(round(v, 2) for v in mesh.extents) == (40.0, 25.0, 40.0)
     for ext in ("step", "stl", "3mf", "png"):
-        assert (BRACKET / "out" / f"example-bracket.{ext}").exists()
+        assert (bracket / "out" / f"example-bracket.{ext}").exists()
 
 
 def test_bracket_rejects_thin_wall(monkeypatch):

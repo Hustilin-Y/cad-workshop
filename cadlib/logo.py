@@ -28,6 +28,13 @@ import numpy as np
 DATA = Path(__file__).with_name("logo_shiba.json")
 SEGMENTS = 32
 SIMPLIFY_MM = 0.04      # точность контуров: всё мельче для сопла 0.4 не существует
+# Умолчания без профиля — сопло 0.4, слой 0.2. С профилем (place_logo(..., p=p)) всё ниже
+# пересчитывается от его сопла и слоя, чтобы при сопле 0.6–0.8 стенки лого остались печатными.
+NOZZLE_DEFAULT = 0.4
+LAYER_DEFAULT = 0.2
+MIN_LINE_LINES = 2      # бортики, стенки и отступ от края — не тоньше 2 линий сопла
+BASE_LAYERS = 4         # основа барельефа: 4 слоя
+STEP_LAYERS = 2         # каждый следующий уровень: 2 слоя
 TERRACE_INSET = 0.05    # верхняя терраса уже нижней (см. _terraces)
 
 # Глаза и брови — доли высоты лого (на картинке глаза мелкие, по просьбе пользователя крупнее).
@@ -131,15 +138,16 @@ def _drop_slivers(m: mf.Manifold, min_volume: float = 1e-3) -> mf.Manifold:
     return mf.Manifold.compose(parts) if len(parts) > 1 else parts[0]
 
 
-def logo_relief(height: float, base: float = 0.8, step: float = 0.4, rim: float | None = None) -> mf.Manifold:
+def logo_relief(height: float, base: float = 0.8, step: float = 0.4, rim: float | None = None,
+                min_line: float = MIN_LINE_LINES * NOZZLE_DEFAULT) -> mf.Manifold:
     """Барельеф (стиль 1). Низ на Z = 0, основа base мм, каждый уровень выше на step мм.
 
     Уровни: основа (рыжая шерсть) → бортик головы, маска, бабочка → глаза, нос, узел, бортик бабочки.
     Пасть утоплена на step ниже основы, язык — на уровне основы внутри пасти.
-    rim — ширина бортиков; по умолчанию 3% высоты, но не меньше 0.8 мм (2 линии сопла 0.4).
+    rim — ширина бортиков; по умолчанию 3% высоты, но не меньше min_line (2 линии сопла).
     """
     L = layers(height)
-    rim = max(0.8, 0.03 * height) if rim is None else rim
+    rim = max(min_line, 0.03 * height) if rim is None else rim
     head = L["silhouette"] - L["bow"]
     mouth_open = L["mouth"] - L["tongue"]
     features = L["eyes"] + L["nose"] + L["brows"]
@@ -157,13 +165,14 @@ def logo_relief(height: float, base: float = 0.8, step: float = 0.4, rim: float 
     ])
 
 
-def logo_outline(height: float, wall: float = 1.0, line: float | None = None) -> mf.Manifold:
+def logo_outline(height: float, wall: float = 1.0, line: float | None = None,
+                 min_line: float = MIN_LINE_LINES * NOZZLE_DEFAULT) -> mf.Manifold:
     """Контурный стиль (2): стенки высотой wall по границам зон, глаза и нос залиты.
 
-    line — толщина стенок; по умолчанию 3% высоты, но не меньше 0.8 мм.
+    line — толщина стенок; по умолчанию 3% высоты, но не меньше min_line (2 линии сопла).
     """
     L = layers(height)
-    line = max(0.8, 0.03 * height) if line is None else line
+    line = max(min_line, 0.03 * height) if line is None else line
     head = L["silhouette"] - L["bow"]
     lines = (_band(L["silhouette"], line) - L["bow"]
              + _band(L["mask"] ^ head, line)
@@ -175,7 +184,7 @@ def logo_outline(height: float, wall: float = 1.0, line: float | None = None) ->
 
 
 LOGO_EMBED = 0.1        # выпуклое лого утоплено в грань: слияние по объёму
-DEBOSS_GAP = 0.4        # канавка вокруг вдавленного лого (ниша шире силуэта)
+DEBOSS_GAP = 0.4        # канавка вокруг вдавленного лого при сопле 0.4 (одна линия сопла)
 
 
 def _frame(origin, normal, up) -> np.ndarray:
@@ -210,18 +219,28 @@ def _check_footprint(body: mf.Manifold, footprint: mf.CrossSection, frame: np.nd
 
 
 def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: str = "emboss",
-               base: float = 0.8, step: float = 0.4, check: bool = True, margin: float = 0.8):
+               base: float | None = None, step: float | None = None, check: bool = True,
+               margin: float | None = None, p=None):
     """Поставить лого-барельеф на ровную грань детали. Возвращает trimesh (STEP у такой детали не будет).
 
     body   — тело build123d, trimesh или manifold;
     origin — центр лого на поверхности грани, normal — наружная нормаль, up — куда смотрят уши;
     mode   — "emboss": барельеф над гранью (высота base + 2·step);
-             "deboss": ниша по силуэту с канавкой DEBOSS_GAP, барельеф внутри заподлицо с гранью;
-    margin — сколько сплошной грани нужно вокруг лого (по умолчанию 2 линии сопла 0.4): иначе
-             стенка между лого и краем или отверстием выйдет тоньше, чем принтер может напечатать.
+             "deboss": ниша по силуэту с канавкой в линию сопла, барельеф внутри заподлицо с гранью;
+    p      — профиль принтера: от сопла и слоя зависят умолчания ниже. Без p — как для сопла 0.4;
+    base, step — высота основы и шаг уровней: по умолчанию 4 и 2 слоя (0.8 и 0.4 при слое 0.2);
+    margin — сколько сплошной грани нужно вокруг лого, по умолчанию 2 линии сопла: иначе стенка
+             между лого и краем или отверстием выйдет тоньше, чем принтер может напечатать.
     """
     from .mesh import from_manifold, to_manifold
 
+    nozzle = p.nozzle_mm if p is not None else NOZZLE_DEFAULT
+    layer = p.layer_mm if p is not None else LAYER_DEFAULT
+    base = BASE_LAYERS * layer if base is None else base
+    step = STEP_LAYERS * layer if step is None else step
+    margin = MIN_LINE_LINES * nozzle if margin is None else margin
+    gap = DEBOSS_GAP * nozzle / NOZZLE_DEFAULT
+    min_line = MIN_LINE_LINES * nozzle
     m = body if isinstance(body, mf.Manifold) else to_manifold(body)
     frame = _frame(origin, normal, up)
     sil = layers(height)["silhouette"]
@@ -232,14 +251,14 @@ def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: s
     if mode == "emboss":
         if check:
             _check_footprint(m, with_margin(sil), frame)
-        logo = logo_relief(height, base + LOGO_EMBED, step).translate((0, 0, -LOGO_EMBED))
+        logo = logo_relief(height, base + LOGO_EMBED, step, min_line=min_line).translate((0, 0, -LOGO_EMBED))
         result = m + logo.transform(frame)
     elif mode == "deboss":
-        niche = sil.offset(DEBOSS_GAP, mf.JoinType.Round, 2.0, SEGMENTS)
+        niche = sil.offset(gap, mf.JoinType.Round, 2.0, SEGMENTS)
         if check:
             _check_footprint(m, with_margin(niche), frame)
         pocket = _extrude(niche, -total, 1.0)
-        logo = logo_relief(height, base + LOGO_EMBED, step).translate((0, 0, -total - LOGO_EMBED))
+        logo = logo_relief(height, base + LOGO_EMBED, step, min_line=min_line).translate((0, 0, -total - LOGO_EMBED))
         result = (m - pocket.transform(frame)) + logo.transform(frame)
     else:
         raise ValueError(f"mode: 'emboss' или 'deboss', получено {mode!r}")

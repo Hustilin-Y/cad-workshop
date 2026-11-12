@@ -21,12 +21,13 @@ def _write_model(folder: Path, body: str) -> Path:
     return folder
 
 
-def test_build_calibration(capsys):
-    assert main(["build", str(ROOT / "calibration")]) == 0
+def test_build_calibration(capsys, repo_copy):
+    folder = repo_copy("calibration")
+    assert main(["build", str(folder)]) == 0
     out = capsys.readouterr().out
     assert "FAIL" not in out and "WARN" not in out
     for ext in ("step", "stl", "3mf", "png"):
-        assert (ROOT / "calibration" / "out" / f"tolerance-gauge.{ext}").stat().st_size > 0
+        assert (folder / "out" / f"tolerance-gauge.{ext}").stat().st_size > 0
 
 
 def test_build_fails_when_too_big(tmp_path, capsys):

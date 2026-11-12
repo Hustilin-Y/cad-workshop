@@ -49,3 +49,27 @@ def test_rejects_hole_and_edge(block):
 
 def test_aspect_reasonable():
     assert 0.6 < aspect() < 1.0
+
+
+def test_profile_at_nozzle_04_changes_nothing(block):
+    from cadlib.config import load_profile
+
+    plain = place_logo(block, (0, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20)
+    with_p = place_logo(block, (0, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20, p=load_profile(nozzle=0.4))
+    assert with_p.volume == pytest.approx(plain.volume, rel=1e-6)
+
+
+def test_bigger_nozzle_makes_taller_relief_and_wider_margin(block):
+    from cadlib.config import load_profile
+
+    thin = place_logo(block, (0, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20, p=load_profile(nozzle=0.4))
+    thick = place_logo(block, (0, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20, p=load_profile(nozzle=0.8))
+    # основа 4 слоя + 2 уровня по 2 слоя: 1.6 мм при слое 0.2, 3.2 мм при слое 0.4
+    assert thin.bounds[1][2] == pytest.approx(10 + 1.6, abs=0.01)
+    assert thick.bounds[1][2] == pytest.approx(10 + 3.2, abs=0.01)
+    # у края: с отступом в 2 линии сопла 0.4 (0.8 мм) лого влезает, с 2 линиями сопла 0.8 (1.6 мм) — нет
+    w = 20 * aspect()
+    x = 20 - w / 2 - 1.2
+    place_logo(block, (x, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20, p=load_profile(nozzle=0.4))
+    with pytest.raises(ValueError, match="не помещается"):
+        place_logo(block, (x, 0, 10), (0, 0, 1), up=(0, 1, 0), height=20, p=load_profile(nozzle=0.8))
