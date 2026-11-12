@@ -27,6 +27,12 @@ EDGE_COLOR = np.array([0.08, 0.12, 0.22, 1.0])
 EDGE_WIDTH = 0.5
 FEATURE_DEG = 30.0  # рёбра острее этого угла рисуются линией
 PREVIEW_MAX_FACES = 150_000  # выше этого виды рисуются по упрощённой сетке (на PNG разницы не видно)
+PREVIEW_WIDTH_IN = 11.0      # at PREVIEW_DPI: ~1300 px wide, sharp on a phone in Telegram
+PREVIEW_DPI = 120
+PREVIEW_MIN_HEIGHT_IN = 5.0
+PREVIEW_MAX_HEIGHT_IN = 16.0
+MIN_PANEL_SHARE = 0.3        # no view narrower or lower than 30% of the largest one
+SECTION_WIDTH_SHARE = 0.9
 
 
 def _iso_basis() -> np.ndarray:
@@ -51,29 +57,54 @@ def render_preview(
     path: Path,
     title: str = "",
     section: str | tuple[str, float] | None = None,
+    print_down=None,
 ) -> Path:
-    """section: 'x' | 'y' | 'z' — разрез перпендикулярно оси через центр, или ('y', 28.0) — на заданной координате."""
+    """section: 'x' | 'y' | 'z' — разрез перпендикулярно оси через центр, или ('y', 28.0) — на заданной координате.
+
+    Layout like a drawing, sized to the part so a phone screen shows it large: the top view above
+    the front view (they share the X width), the right view beside the front view (they share the
+    Z height), the isometric view in the free corner, the section in a column of its own.
+    print_down only adds a note to the title; the views stay in the design orientation.
+    """
     section_at = None
     if isinstance(section, (tuple, list)):
         section, section_at = section[0], float(section[1])
     size = mesh.extents
     shown = _for_drawing(mesh)
 
-    ncols = 3 if section else 2
-    fig, axes = plt.subplots(2, ncols, figsize=(5.5 * ncols, 10), dpi=100)
-    slots = [axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]]
-    for ax, view in zip(slots, VIEWS):
-        _draw_view(ax, shown, *view)
+    iso = shown.vertices @ VIEWS[0][1].T
+    iso_w, iso_h = np.ptp(iso[:, 0]), np.ptp(iso[:, 1])
+    widths = _balanced([size[0], max(size[1], iso_w)])
+    heights = _balanced([max(size[1], iso_h), size[2]])
     if section:
-        _draw_section(axes[0, 2], mesh, section, section_at)
-        axes[1, 2].axis("off")
+        widths.append(max(widths) * SECTION_WIDTH_SHARE)
+    fig_w = PREVIEW_WIDTH_IN * (1.3 if section else 1.0)
+    fig_h = float(np.clip(fig_w * sum(heights) / sum(widths) + 1.0, PREVIEW_MIN_HEIGHT_IN, PREVIEW_MAX_HEIGHT_IN))
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=PREVIEW_DPI)
+    grid = fig.add_gridspec(2, len(widths), width_ratios=widths, height_ratios=heights, wspace=0.25, hspace=0.3)
+    slots = {"Изометрия": grid[0, 1], "Сверху (XY)": grid[0, 0], "Спереди (XZ)": grid[1, 0], "Справа (YZ)": grid[1, 1]}
+    for view in VIEWS:
+        _draw_view(fig.add_subplot(slots[view[0]]), shown, *view)
+    if section:
+        _draw_section(fig.add_subplot(grid[:, 2]), mesh, section, section_at)
 
-    fig.suptitle(f"{title}  {size[0]:.1f} × {size[1]:.1f} × {size[2]:.1f} мм".strip())
-    fig.tight_layout()
+    heading = f"{title}  {size[0]:.1f} × {size[1]:.1f} × {size[2]:.1f} мм".strip()
+    if print_down is not None:
+        from .checks import _axis_label
+
+        heading += f"\nprinted with {_axis_label(print_down)} on the bed"
+    fig.suptitle(heading, fontsize=15)
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path)
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     return path
+
+
+def _balanced(sizes: list[float]) -> list[float]:
+    """Panel sizes in proportion to the part, but none below MIN_PANEL_SHARE of the largest:
+    a 3 mm plate would otherwise get a front view one pixel high."""
+    top = max(max(sizes), 1e-6)
+    return [max(s, top * MIN_PANEL_SHARE) for s in sizes]
 
 
 def _for_drawing(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -136,7 +167,7 @@ def _draw_view(ax, mesh: trimesh.Trimesh, name: str, basis: np.ndarray, labels: 
         ax.set_ylabel(f"{labels[1]}, мм")
         ax.grid(True, linewidth=0.3)
         ax.set_axisbelow(True)
-        ax.tick_params(labelsize=8)
+        ax.tick_params(labelsize=9)
 
 
 def section_loops(mesh: trimesh.Trimesh, axis: str, at: float | None = None) -> list[np.ndarray]:

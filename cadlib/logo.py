@@ -57,10 +57,14 @@ def logo_available() -> bool:
     return DATA.exists()
 
 
+class LogoMissing(FileNotFoundError):
+    """The logo data isn't in this copy (CI, the server): a logo-only part can't be built here."""
+
+
 @lru_cache(maxsize=1)
 def _data() -> dict:
     if not DATA.exists():
-        raise FileNotFoundError(
+        raise LogoMissing(
             f"нет данных лого {DATA.name}: лого не входит в публичный репозиторий. "
             "Положите assets/logo/shiba-styles-front.webp и запустите tools/logo_extract.py"
         )

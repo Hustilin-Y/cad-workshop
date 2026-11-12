@@ -1,5 +1,7 @@
 # CAD-мастерская
 
+[![tests](https://github.com/Hustilin-Y/cad-workshop/actions/workflows/tests.yml/badge.svg)](https://github.com/Hustilin-Y/cad-workshop/actions/workflows/tests.yml)
+
 Параметрические детали и ремиксы чужих моделей под 3D-печать на Bambu Lab P2S. Модели пишутся кодом (build123d, manifold3d), собираются одной командой, проверяются и выдаются в STEP, STL и 3MF вместе с PNG-превью. Печатаете вы сами: открываете файл в Bambu Studio.
 
 Удобнее всего работать через Claude Code: откройте эту папку и напишите, например, «сделай держатель под …» или «доработай этот STL: …». Порядок работы описан в скилле [.claude/skills/cad](.claude/skills/cad/SKILL.md) и в [CLAUDE.md](CLAUDE.md).
@@ -28,8 +30,14 @@ uv run pytest
 | `uv run cad.py preview <папка или файл>` | только PNG (`--section x/y/z` добавляет разрез) |
 | `uv run cad.py check <файл>` | проверки любого STL, 3MF или STEP, в том числе чужого |
 | `uv run cad.py inspect <файл>` | габариты, объём, тела, основание, плоские грани |
+| `uv run cad.py orient <папка или файл>` | best sides to print on: a table, a PNG of each and the `PRINT_DOWN` line to use |
+| `uv run cad.py build --all` | build every model, one line each; the failures in full |
 
 Для разовой сборки с другим соплом или пластиком: `--nozzle 0.6`, `--material petg`.
+
+More build flags:
+- `--set NAME=VALUE` changes a model parameter for one run without editing the file: `--set WIDTH=45 --set LOGO=False`, or a shared module's, `--set hanger.ROUND_R=2`. Only what `build(p)` reads at run time changes.
+- `--print-ready` exports STL and 3MF turned so the `PRINT_DOWN` side lies on the bed: open them in the slicer and print as they are. STEP keeps the design orientation.
 
 ## Как добавить деталь
 
@@ -59,6 +67,8 @@ uv run pytest
    - нет «островов»: мест, где слой начинается в воздухе, как в слайсере. Мелкий остров, который за 1 мм срастается с деталью, только упоминается.
 6. Доля нависаний круче 45°; больше 25% — предупреждение.
 7. Для ремикса: изменение объёма и габаритов относительно оригинала, хэш оригинала.
+
+The report ends with the weight: grams of plastic at the infill share from `printer.toml` (shells + infill, about ±20% of the slicer's figure) and the solid mass as an upper bound. With `price_per_kg` set for the material it also shows the cost.
 
 Проверки 3, 5 и 6 считаются в ориентации печати. Если модель печатается не той стороной, что внизу в файле, в `model.py` задаётся `PRINT_DOWN = "-y"` (сторона, которая ложится на стол), а для чужого файла — `check <файл> --down -y`. Сами файлы при этом не поворачиваются.
 

@@ -31,13 +31,23 @@ slide_fit_mm = 0.3
 # Поправки к допускам по пластику (прибавляются к [tolerances]) и подсказки.
 [materials.PLA]
 clearance_add_mm = 0.0
+density_g_cm3 = 1.24
+# price_per_kg = 0          # spool price in [estimate] currency; set it to see the cost in the build report
 note = "жёсткий, точный; плывёт от 55 °C, не для салона авто и кипятка"
 [materials.PETG]
 clearance_add_mm = 0.05
+density_g_cm3 = 1.27
 note = "вязкий, ударопрочный, до ~75 °C; чуть больше зазоры, тянет нити"
 [materials.ABS]
 clearance_add_mm = 0.1
+density_g_cm3 = 1.04
 note = "до ~95 °C, даёт усадку ~0.5–0.7 %; печатать с закрытой крышкой"
 [materials.ASA]
 clearance_add_mm = 0.1
+density_g_cm3 = 1.07
 note = "как ABS, но УФ-стойкий, для улицы; закрытая камера"
+
+# Filament estimate in the build report (cadlib/estimate.py): shells + infill, ±20% of the slicer.
+[estimate]
+infill_share = 0.15         # slicer's sparse infill density
+currency = "UAH"            # for price_per_kg in [materials.*]

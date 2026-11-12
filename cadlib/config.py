@@ -23,6 +23,10 @@ class Profile:
     press_fit_mm: float
     slide_fit_mm: float
     material_note: str
+    density_g_cm3: float = 1.24      # filament density, for the weight estimate
+    price_per_kg: float | None = None  # spool price; None — the report shows no cost
+    currency: str = "UAH"
+    infill_share: float = 0.15       # infill the weight estimate assumes
 
     @property
     def usable_volume_mm(self) -> tuple[float, float, float]:
@@ -72,4 +76,8 @@ def load_profile(
         press_fit_mm=float(tol["press_fit_mm"]) + add,
         slide_fit_mm=float(tol["slide_fit_mm"]) + add,
         material_note=mat.get("note", ""),
+        density_g_cm3=float(mat.get("density_g_cm3", 1.24)),
+        price_per_kg=float(mat["price_per_kg"]) if "price_per_kg" in mat else None,
+        currency=str(data.get("estimate", {}).get("currency", "UAH")),
+        infill_share=float(data.get("estimate", {}).get("infill_share", 0.15)),
     )

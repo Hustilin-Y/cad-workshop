@@ -6,12 +6,17 @@
   preview <путь>    только PNG-превью (папка модели или файл STL/3MF/STEP)
   check <файл>      проверки любого файла, включая чужой
   inspect <файл>    габариты, объём, тела, основание, плоскости — перед ремиксом
+  orient <путь>     best sides to print on, with PNGs and a PRINT_DOWN line
+  build --all       build every part, remix and the calibration; one line each
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
+import contextlib
 import hashlib
+import io
 import importlib.util
 import re
 import shutil
@@ -60,9 +65,18 @@ def _parser() -> argparse.ArgumentParser:
     nr.add_argument("file", type=Path)
     nr.set_defaults(func=cmd_new_remix)
 
+    def set_flag(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--set", action="append", metavar="NAME=VALUE",
+                       help="override a model parameter for this run, e.g. --set WIDTH=45 --set LOGO=False "
+                            "(a shared module's: --set hanger.ROUND_R=2); the model file is not changed")
+
     p = sub.add_parser("build", help="собрать модель")
-    p.add_argument("path", type=Path)
+    p.add_argument("path", type=Path, nargs="?")
+    p.add_argument("--all", action="store_true", help="build every part, remix and the calibration")
     p.add_argument("--section", choices=("x", "y", "z"), help="добавить разрез в превью (через центр)")
+    p.add_argument("--print-ready", action="store_true",
+                   help="export STL/3MF turned for printing (PRINT_DOWN on the bed); STEP keeps the design orientation")
+    set_flag(p)
     profile_flags(p)
     p.set_defaults(func=cmd_build)
 
@@ -70,8 +84,17 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("path", type=Path)
     p.add_argument("--section", choices=("x", "y", "z"))
     p.add_argument("--out", type=Path, help="куда положить PNG")
+    set_flag(p)
     profile_flags(p)
     p.set_defaults(func=cmd_preview)
+
+    p = sub.add_parser("orient", help="best sides to print on")
+    p.add_argument("path", type=Path, help="a model folder or an STL/3MF/STEP file")
+    p.add_argument("--top", type=int, default=3, help="how many orientations to show (default 3)")
+    p.add_argument("--no-png", action="store_true", help="skip the preview of each orientation")
+    set_flag(p)
+    profile_flags(p)
+    p.set_defaults(func=cmd_orient)
 
     p = sub.add_parser("check", help="проверки файла")
     p.add_argument("file", type=Path)
@@ -102,6 +125,47 @@ def load_model(folder: Path) -> ModuleType:
     if not hasattr(module, "build"):
         raise UserError(f"в {entry.name} нет функции build(p)")
     return module
+
+
+def apply_overrides(module: ModuleType, items: list[str] | None):
+    """--set NAME=VALUE: change UPPER_CASE parameters of the model (or of a module it holds, as
+    hanger.ROUND_R) for one run. Values are Python literals (45, 0.3, False, "text", (1, 2));
+    anything else is taken as text. Returns a function that puts the old values back.
+
+    Only what build(p) reads at run time changes: a value computed from parameters at import
+    (TOTAL = WIDTH + 2 * WALL at module level) keeps its old value.
+    """
+    saved = []
+    try:
+        for item in items or []:
+            name, sep, raw = item.partition("=")
+            name = name.strip()
+            if not sep or not name:
+                raise UserError(f"--set {item!r}: expected NAME=VALUE")
+            target, attr = module, name
+            if "." in name:
+                owner, attr = name.rsplit(".", 1)
+                target = getattr(module, owner, None)
+                if not isinstance(target, ModuleType):
+                    raise UserError(f"--set {name}: the model has no module {owner!r}")
+            if not attr.isupper() or not hasattr(target, attr):
+                raise UserError(f"--set {name}: no parameter {attr} in {getattr(target, '__name__', 'the model')}")
+            try:
+                value = ast.literal_eval(raw.strip())
+            except (ValueError, SyntaxError):
+                value = raw.strip()
+            saved.append((target, attr, getattr(target, attr)))
+            setattr(target, attr, value)
+            print(f"  set {name} = {value!r} (was {saved[-1][2]!r})")
+    except Exception:
+        _restore(saved)
+        raise
+    return lambda: _restore(saved)
+
+
+def _restore(saved) -> None:
+    for target, attr, value in reversed(saved):
+        setattr(target, attr, value)
 
 
 def run_model(module: ModuleType, profile):
@@ -162,16 +226,31 @@ def cmd_new_part(args) -> int:
 
 
 def cmd_build(args) -> int:
+    if getattr(args, "all", False):
+        if args.path is not None or getattr(args, "set", None):
+            raise UserError("build --all takes no folder and no --set")
+        return cmd_build_all(args)
+    if args.path is None:
+        raise UserError("build: give a model folder, or --all")
+    module = load_model(args.path)
+    restore = apply_overrides(module, getattr(args, "set", None))
+    try:
+        return _build(args, module)
+    finally:
+        restore()
+
+
+def _build(args, module) -> int:
     import trimesh
 
     from cadlib.checks import check_mesh
+    from cadlib.estimate import estimate
     from cadlib.export import DEFAULT_FORMATS, export_all, export_mesh
     from cadlib.meshio import load_mesh
     from cadlib.preview import render_preview
 
     t0 = time.perf_counter()
     profile = _profile(args)
-    module = load_model(args.path)
     folder = args.path.resolve()
     name = getattr(module, "NAME", folder.name)
     formats = tuple(getattr(module, "FORMATS", DEFAULT_FORMATS))
@@ -195,6 +274,16 @@ def cmd_build(args) -> int:
         print(f"  {fmt.upper():4} {_rel(path)}  {path.stat().st_size / 1024:.0f} КБ")
 
     mesh = load_mesh(files["stl"]) if "stl" in files else load_mesh(next(iter(files.values())))
+    if getattr(args, "print_ready", False):
+        if print_down is None:
+            print("  print-ready: no PRINT_DOWN, the files already lie as printed (bottom on the bed)")
+        else:
+            from cadlib.checks import down_vector
+            from cadlib.orient import label_for, print_ready
+
+            turned = print_ready(mesh, print_down)
+            export_mesh(turned, out_dir, name, tuple(f for f in formats if f != "step"))
+            print(f"  print-ready: STL/3MF turned with {label_for(down_vector(print_down))} on the bed; STEP as designed")
     report = check_mesh(mesh, profile, expected_bodies, print_down)
     if "3mf" in files and "stl" in files:
         mesh_3mf = load_mesh(files["3mf"])
@@ -204,8 +293,9 @@ def cmd_build(args) -> int:
                 report.add(f"3MF {c.name}", "fail", c.message)
     if source:
         _check_source(folder, source, source_hash, mesh, module, report)
+    report.add("Weight", "info", estimate(mesh, profile).summary(profile))
 
-    png = render_preview(mesh, out_dir / f"{name}.png", name, section=section)
+    png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
     print(f"  PNG  {_rel(png)}")
     print()
     print(report.format())
@@ -280,28 +370,37 @@ def cmd_preview(args) -> int:
     from cadlib.preview import render_preview
 
     path = args.path.resolve()
+    print_down = None
     if path.is_dir():
         module = load_model(path)
-        result = run_model(module, _profile(args))
+        restore = apply_overrides(module, getattr(args, "set", None))
+        try:
+            result = run_model(module, _profile(args))
+        finally:
+            restore()
         mesh = result if isinstance(result, trimesh.Trimesh) else shape_to_mesh(result)
         name = getattr(module, "NAME", path.name)
         section = args.section or getattr(module, "SECTION", None)
+        print_down = _print_down(getattr(module, "PRINT_DOWN", None), "PRINT_DOWN")
         out = args.out or path / "out" / f"{name}.png"
     else:
         mesh = _load_file(path)
         name = path.stem
         section = args.section
         out = args.out or _out_dir_for(path) / f"{name}.png"
-    render_preview(mesh, out, name, section=section)
+    render_preview(mesh, out, name, section=section, print_down=print_down)
     print(f"PNG: {_rel(out)}")
     return 0
 
 
 def cmd_check(args) -> int:
     from cadlib.checks import check_mesh
+    from cadlib.estimate import estimate
 
     mesh = _load_file(args.file)
-    report = check_mesh(mesh, _profile(args), args.bodies, _print_down(args.down, "--down"))
+    profile = _profile(args)
+    report = check_mesh(mesh, profile, args.bodies, _print_down(args.down, "--down"))
+    report.add("Weight", "info", estimate(mesh, profile).summary(profile))
     print(f"== {args.file.name}")
     print(report.format())
     return 1 if report.failed else 0
@@ -317,6 +416,103 @@ def cmd_inspect(args) -> int:
     for k, v in rows:
         print(f"  {k:<{width}}  {v}")
     return 0
+
+
+def cmd_orient(args) -> int:
+    import trimesh
+
+    from cadlib.checks import down_vector
+    from cadlib.export import shape_to_mesh
+    from cadlib.orient import label_for, print_ready, rank_orientations
+    from cadlib.preview import render_preview
+
+    profile = _profile(args)
+    path = args.path.resolve()
+    current = None
+    if path.is_dir():
+        module = load_model(path)
+        restore = apply_overrides(module, getattr(args, "set", None))
+        try:
+            result = run_model(module, profile)
+        finally:
+            restore()
+        mesh = result if isinstance(result, trimesh.Trimesh) else shape_to_mesh(result)
+        name = getattr(module, "NAME", path.name)
+        out_dir = path / "out"
+        current = _print_down(getattr(module, "PRINT_DOWN", None), "PRINT_DOWN")
+    else:
+        mesh = _load_file(path)
+        name = path.stem
+        out_dir = _out_dir_for(path)
+
+    ranked = rank_orientations(mesh, profile)
+    current_label = label_for(down_vector(current)) if current is not None else "-Z"
+    print(f"== {name}: {len(ranked)} candidate sides, best first (now printed with {current_label} on the bed)")
+    print(f"  {'#':>2}  {'on the bed':<20} {'height':>8} {'base':>9} {'base %':>6} {'overhang':>8}  notes")
+    for k, o in enumerate(ranked[: max(args.top, 1)], 1):
+        mark = "  <- now" if o.label == current_label else ""
+        notes = ", ".join(o.notes) or "-"
+        print(f"  {k:>2}  {o.label:<20} {o.height_mm:>5.1f} mm {o.base_mm2:>6.0f} mm² {o.base_share * 100:>5.0f}% "
+              f"{o.overhang_share * 100:>7.1f}%  {notes}{mark}")
+        if not args.no_png:
+            png = render_preview(print_ready(mesh, o.down), out_dir / f"{name}-orient-{k}.png",
+                                 f"{name} #{k}: {o.label} on the bed")
+            print(f"      PNG {_rel(png)}")
+    best = ranked[0]
+    if not best.fits_bed:
+        print("No side fits the bed: the part needs splitting (cadlib.mesh.split_by_plane) or scaling.")
+        return 1
+    print(f"Best: PRINT_DOWN = {best.print_down}   (in model.py; for a file: check --down / build --print-ready)")
+    return 0
+
+
+def cmd_build_all(args) -> int:
+    """Build every model folder with its own settings; print one line each and the failures in full."""
+    folders = [ROOT / "calibration"] + sorted(
+        d for base in ("parts", "remix") for d in (ROOT / base).glob("*") if d.is_dir()
+    )
+    folders = [d for d in folders if any((d / f).exists() for f in ENTRY_FILES)]
+    if not folders:
+        raise UserError("no model folders found")
+    print(f"== building {len(folders)} models")
+    failed = skipped = 0
+    for folder in folders:
+        buffer = io.StringIO()
+        t0 = time.perf_counter()
+        try:
+            with contextlib.redirect_stdout(buffer):
+                code = cmd_build(argparse.Namespace(
+                    path=folder, all=False, section=None, print_ready=False, set=None,
+                    nozzle=args.nozzle, material=args.material))
+        except UserError as e:
+            code = 2
+            buffer.write(f"Ошибка: {e}\n")
+        except FileNotFoundError as e:
+            from cadlib.logo import LogoMissing
+
+            if not isinstance(e, LogoMissing):
+                code = 3
+                buffer.write(f"{type(e).__name__}: {e}\n")
+            else:  # a logo-only part in a copy without the private logo data: nothing to build here
+                skipped += 1
+                print(f"  {_rel(folder):<40} {'skipped':<12}   no logo data in this copy")
+                continue
+        except Exception as e:  # noqa: BLE001  one broken model must not stop the rest
+            code = 3
+            buffer.write(f"{type(e).__name__}: {e}\n")
+        text = buffer.getvalue()
+        warns = text.count("[WARN]")
+        status = {0: "ok", 1: "FAIL", 2: "error", 3: "crash"}.get(code, f"exit {code}")
+        if status == "ok" and warns:
+            status = f"ok, {warns} warn"
+        print(f"  {_rel(folder):<40} {status:<12} {time.perf_counter() - t0:5.1f} s")
+        if code:
+            failed += 1
+            for line in text.strip().splitlines()[-12:]:
+                print(f"      {line}")
+    built = len(folders) - failed - skipped
+    print(f"{built} of {len(folders)} built" + (f", {failed} failed" if failed else "") + (f", {skipped} skipped" if skipped else ""))
+    return 1 if failed else 0
 
 
 # --- утилиты -----------------------------------------------------------------
@@ -349,6 +545,8 @@ def _print_down(value, where: str):
 def _out_dir_for(file: Path) -> Path:
     """PNG для чужого файла кладём в out/ рядом; в source/ ничего не пишем."""
     parent = file.resolve().parent
+    if parent.name == "out":  # a built file: its pictures go next to it, not into out/out/
+        return parent
     return (parent.parent if parent.name == "source" else parent) / "out"
 
 
