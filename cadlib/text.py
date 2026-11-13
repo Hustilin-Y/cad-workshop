@@ -1,9 +1,9 @@
-"""Надписи на деталях: один и тот же шрифт на любой ОС.
+"""Lettering on parts: the same font on any OS.
 
-build123d по умолчанию просит системный Arial. На Linux его нет, и OCCT молча берёт однолинейный
-шрифт, из которого выходит незамкнутая сетка. Поэтому шрифт берём из matplotlib: DejaVu Sans Bold
-(свободная лицензия, кириллица), он ставится вместе с зависимостями проекта. Жирное начертание
-печатается чище: у тонких штрихов обычного на сопле 0.4 стенки в одну линию.
+build123d asks for the system Arial by default. Linux has none, and OCCT silently takes a single-line
+font that gives an open mesh. So the font comes from matplotlib: DejaVu Sans Bold
+(free licence, Cyrillic included), installed with the project's dependencies. The bold weight
+prints cleaner: the regular weight's thin strokes are one line wide with a 0.4 nozzle.
 """
 
 from __future__ import annotations
@@ -17,16 +17,16 @@ FONT_FILE = "DejaVuSans-Bold.ttf"
 
 
 def font_path() -> Path:
-    """Путь к TTF внутри пакета matplotlib (без импорта самого matplotlib)."""
+    """Path to the TTF inside the matplotlib package (without importing matplotlib itself)."""
     spec = find_spec("matplotlib")
     if spec is None or not spec.submodule_search_locations:
-        raise RuntimeError("matplotlib не установлен: uv sync")
+        raise RuntimeError("matplotlib is not installed: uv sync")
     path = Path(spec.submodule_search_locations[0]) / "mpl-data" / "fonts" / "ttf" / FONT_FILE
     if not path.is_file():
-        raise RuntimeError(f"нет шрифта {path}")
+        raise RuntimeError(f"no font at {path}")
     return path
 
 
 def label(txt: str, size_mm: float, align: tuple[Align, Align] = (Align.CENTER, Align.CENTER)) -> Sketch:
-    """Плоская надпись высотой size_mm; дальше extrude на нужную высоту рельефа или вычитание."""
+    """Flat lettering size_mm high; then extrude it to the relief height, or subtract it."""
     return Text(txt, font_size=size_mm, font_path=str(font_path()), align=align)

@@ -1,14 +1,14 @@
-"""Снять слои лого с картинки «барельеф» (assets/logo/shiba-styles-front.webp) → cadlib/logo_shiba.json.
+"""Trace the logo layers from the "relief" picture (assets/logo/shiba-styles-front.webp) → cadlib/logo_shiba.json.
 
-Запуск: uv run python tools/logo_extract.py [--debug папка]
+Run: uv run python tools/logo_extract.py [--debug folder]
 
-Как работает:
-1. Левая панель картинки классифицируется по ближайшему цвету палитры: фон, рыжий, белый,
-   тёмный, красный, розовый.
-2. Из масок собираются слои: силуэт, бабочка, узел, маска морды, глаза, нос, пасть, язык.
-3. Каждый слой делается симметричным (усреднение с зеркалом по оси морды) и сглаживается.
-4. Контуры упрощаются и сохраняются в нормированных координатах: высота лого = 1,
-   центр по габаритам в (0, 0), ось Y вверх.
+How it works:
+1. The picture's left panel is classified by the nearest palette colour: background, ginger, white,
+   dark, red, pink.
+2. The masks make up the layers: silhouette, bow, knot, muzzle mask, eyes, nose, mouth, tongue.
+3. Each layer is made symmetric (averaged with its mirror about the muzzle's axis) and smoothed.
+4. The contours are simplified and saved in normalised coordinates: logo height = 1,
+   the bounds' centre at (0, 0), Y up.
 """
 
 from __future__ import annotations
@@ -28,17 +28,17 @@ from scipy import ndimage as nd  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "assets" / "logo" / "shiba-styles-front.webp"
 OUT = ROOT / "cadlib" / "logo_shiba.json"
-PANEL = (30, 40, 500, 600)       # левая панель «барельеф», px
+PANEL = (30, 40, 500, 600)       # the left "relief" panel, px
 PALETTE = {
     "bg": (145, 145, 145), "tan": (192, 160, 115), "white": (212, 208, 195),
     "dark": (55, 50, 42), "red": (145, 65, 42), "pink": (182, 112, 112),
 }
-SMOOTH_PX = 3.5                  # сглаживание масок (сигма гаусса), px: убирает волну от теней рендера
-SIMPLIFY_PX = 0.7                # упрощение контура, px
+SMOOTH_PX = 3.5                  # mask smoothing (Gaussian sigma), px: removes the ripple from the render's shading
+SIMPLIFY_PX = 0.7                # contour simplification, px
 
 
 def classify(im: np.ndarray) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-    """(маски после чистки от шума, сырые маски) — тонкие детали вроде уголков улыбки есть только в сырых."""
+    """(denoised masks, raw masks): fine details such as the corners of the smile exist only in the raw ones."""
     names = list(PALETTE)
     centers = np.array([PALETTE[n] for n in names], float)
     cls = (((im[..., None, :] - centers) ** 2).sum(-1)).argmin(-1)
@@ -56,7 +56,7 @@ def largest(mask: np.ndarray, count: int = 1) -> np.ndarray:
 
 
 def symmetrize(mask: np.ndarray, axis_x: float) -> np.ndarray:
-    """Среднее маски и её зеркала по вертикали x = axis_x, затем сглаживание."""
+    """Average of the mask and its mirror about the vertical x = axis_x, then smoothing."""
     h, w = mask.shape
     xs = np.arange(w)
     src = np.clip(np.round(2 * axis_x - xs).astype(int), 0, w - 1)
@@ -80,7 +80,7 @@ def rdp(p: np.ndarray, eps: float) -> np.ndarray:
 
 
 def contours(field: np.ndarray) -> list[np.ndarray]:
-    """Замкнутые контуры уровня 0.5 сглаженной маски (x, y в px)."""
+    """Closed 0.5-level contours of the smoothed mask (x, y in px)."""
     fig = plt.figure()
     cs = plt.contour(field, [0.5])
     loops = [np.array(seg) for seg in cs.allsegs[0] if len(seg) > 8]
@@ -96,7 +96,7 @@ def extract(debug: Path | None = None) -> dict:
 
     fg = largest(nd.binary_fill_holes(nd.binary_closing(~m["bg"], iterations=2)))
     white = largest(nd.binary_fill_holes(m["white"]))
-    # Ось — по габаритам силуэта: маска морды на картинке слегка несимметрична.
+    # The axis follows the silhouette's bounds: the muzzle mask in the picture is slightly asymmetric.
     cols = np.argwhere(fg)[:, 1]
     axis_x = float((cols.min() + cols.max()) / 2)
 
@@ -110,17 +110,17 @@ def extract(debug: Path | None = None) -> dict:
     face_dark = m["dark"] & (yy < bow_top) & white_or_near(white)
     white_cx = float(np.argwhere(white)[:, 1].mean())
     nose = largest(face_dark & near_axis(w, h, white_cx, 60) & (yy < np.argwhere(white)[:, 0].mean()))
-    # Пасть — по сырой маске: тонкие уголки улыбки чистка от шума съедает.
+    # The mouth comes from the raw mask: denoising eats the thin corners of the smile.
     raw_dark = raw["dark"] & (yy < bow_top) & white_or_near(white)
     below_nose = yy > np.argwhere(nose)[:, 0].max() + 5
     mouth = largest(nd.binary_fill_holes(nd.binary_closing((raw_dark | raw["pink"]) & below_nose, iterations=2)))
-    # Язык разрезан тёмной бороздкой — сначала замкнуть, потом залить.
+    # The tongue is split by a dark groove: close it first, then fill.
     tongue = largest(nd.binary_fill_holes(nd.binary_closing(m["pink"], iterations=5)) & mouth)
     eyes = largest(m["dark"] & ~white & (yy < np.argwhere(nose)[:, 0].min()) & (yy > np.argwhere(white)[:, 0].min() - 30), 2)
 
-    # Своя ось у каждой группы слоёв: на рендере видна боковая стенка барельефа справа,
-    # поэтому центр силуэта сдвинут относительно морды. Отражаем каждую группу по её оси,
-    # а в данных все оси совмещаем в x = 0.
+    # Each group of layers has its own axis: the render shows the relief's side wall on the right,
+    # so the silhouette's centre is shifted from the muzzle's. Each group is mirrored about its own axis,
+    # and in the data all axes are aligned at x = 0.
     face_axis = float(np.argwhere(nose)[:, 1].mean())
     bow_cols = np.argwhere(bow)[:, 1]
     bow_axis = float((bow_cols.min() + bow_cols.max()) / 2)
@@ -145,7 +145,7 @@ def extract(debug: Path | None = None) -> dict:
         ax.imshow(im.astype(np.uint8))
         colors = {"silhouette": "r", "bow": "orange", "knot": "y", "mask": "c", "eyes": "m", "nose": "lime",
                   "mouth": "b", "tongue": "pink"}
-        for name, field in layers.items():   # в координатах картинки, но со сдвигом к общей оси силуэта
+        for name, field in layers.items():   # in picture coordinates, shifted to the silhouette's common axis
             for loop in contours(field):
                 loop = loop + [axis_x - axes[name], 0]
                 ax.plot(*np.vstack([loop, loop[:1]]).T, color=colors[name], lw=1.4)
@@ -157,7 +157,7 @@ def extract(debug: Path | None = None) -> dict:
 
 
 def white_or_near(white: np.ndarray) -> np.ndarray:
-    """Область маски морды с запасом: тёмные черты лежат на ней или у её края."""
+    """The area of the muzzle mask with a margin: the dark features lie on it or at its edge."""
     return nd.binary_dilation(white, iterations=6)
 
 

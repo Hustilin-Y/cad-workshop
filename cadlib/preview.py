@@ -1,7 +1,7 @@
-"""PNG-превью сетки: изометрия + три проекции и, по желанию, разрез. Без GPU и без GUI (backend Agg).
+"""PNG preview of a mesh: isometric view + three projections and, optionally, a section. No GPU, no GUI (Agg backend).
 
-Виды рисуются в 2D: треугольники проецируются на плоскость экрана, задние грани отбрасываются,
-остальные рисуются от дальних к ближним. Это быстрее и честнее по масштабу, чем mplot3d.
+Views are drawn in 2D: triangles are projected onto the screen plane, back faces are dropped,
+the rest are drawn far to near. Faster than mplot3d, and true to scale.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ SECTION_COLOR = "#d9534f"
 LIGHT_DIR = np.array([0.4, -0.6, 0.7]) / np.linalg.norm([0.4, -0.6, 0.7])
 EDGE_COLOR = np.array([0.08, 0.12, 0.22, 1.0])
 EDGE_WIDTH = 0.5
-FEATURE_DEG = 30.0  # рёбра острее этого угла рисуются линией
-PREVIEW_MAX_FACES = 150_000  # выше этого виды рисуются по упрощённой сетке (на PNG разницы не видно)
+FEATURE_DEG = 30.0  # edges sharper than this are drawn as lines
+PREVIEW_MAX_FACES = 150_000  # above this the views use a simplified mesh (no visible difference in the PNG)
 PREVIEW_WIDTH_IN = 11.0      # at PREVIEW_DPI: ~1300 px wide, sharp on a phone in Telegram
 PREVIEW_DPI = 120
 PREVIEW_MIN_HEIGHT_IN = 5.0
@@ -36,19 +36,19 @@ SECTION_WIDTH_SHARE = 0.9
 
 
 def _iso_basis() -> np.ndarray:
-    """Строки: вправо, вверх, к зрителю. Изометрия с камерой спереди-справа-сверху."""
+    """Rows: right, up, toward the viewer. Isometric with the camera front-right-above."""
     toward = np.array([1.0, -1.0, 1.0]) / np.sqrt(3)
     right = np.array([1.0, 1.0, 0.0]) / np.sqrt(2)
     up = np.cross(toward, right)
     return np.array([right, up, toward])
 
 
-# (заголовок, базис экрана, подписи осей или None для изометрии)
+# (title, screen basis, axis labels or None for the isometric view)
 VIEWS = (
-    ("Изометрия", _iso_basis(), None),
-    ("Сверху (XY)", np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], float), ("X", "Y")),
-    ("Спереди (XZ)", np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float), ("X", "Z")),
-    ("Справа (YZ)", np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], float), ("Y", "Z")),
+    ("Isometric", _iso_basis(), None),
+    ("Top (XY)", np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], float), ("X", "Y")),
+    ("Front (XZ)", np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float), ("X", "Z")),
+    ("Right (YZ)", np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], float), ("Y", "Z")),
 )
 
 
@@ -59,7 +59,7 @@ def render_preview(
     section: str | tuple[str, float] | None = None,
     print_down=None,
 ) -> Path:
-    """section: 'x' | 'y' | 'z' — разрез перпендикулярно оси через центр, или ('y', 28.0) — на заданной координате.
+    """section: 'x' | 'y' | 'z' — a section across that axis through the centre, or ('y', 28.0) — at the given coordinate.
 
     Layout like a drawing, sized to the part so a phone screen shows it large: the top view above
     the front view (they share the X width), the right view beside the front view (they share the
@@ -82,13 +82,13 @@ def render_preview(
     fig_h = float(np.clip(fig_w * sum(heights) / sum(widths) + 1.0, PREVIEW_MIN_HEIGHT_IN, PREVIEW_MAX_HEIGHT_IN))
     fig = plt.figure(figsize=(fig_w, fig_h), dpi=PREVIEW_DPI)
     grid = fig.add_gridspec(2, len(widths), width_ratios=widths, height_ratios=heights, wspace=0.25, hspace=0.3)
-    slots = {"Изометрия": grid[0, 1], "Сверху (XY)": grid[0, 0], "Спереди (XZ)": grid[1, 0], "Справа (YZ)": grid[1, 1]}
+    slots = {"Isometric": grid[0, 1], "Top (XY)": grid[0, 0], "Front (XZ)": grid[1, 0], "Right (YZ)": grid[1, 1]}
     for view in VIEWS:
         _draw_view(fig.add_subplot(slots[view[0]]), shown, *view)
     if section:
         _draw_section(fig.add_subplot(grid[:, 2]), mesh, section, section_at)
 
-    heading = f"{title}  {size[0]:.1f} × {size[1]:.1f} × {size[2]:.1f} мм".strip()
+    heading = f"{title}  {size[0]:.1f} × {size[1]:.1f} × {size[2]:.1f} mm".strip()
     if print_down is not None:
         from .checks import _axis_label
 
@@ -108,11 +108,11 @@ def _balanced(sizes: list[float]) -> list[float]:
 
 
 def _for_drawing(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
-    """Упрощённая копия для видов, если треугольников больше PREVIEW_MAX_FACES.
+    """A simplified copy for the views when there are more than PREVIEW_MAX_FACES triangles.
 
-    Каждый треугольник вида — объект matplotlib: сетка в 330 тыс. граней занимала ~1 ГБ памяти,
-    скачанная модель на миллион с лишним не влезла бы в небольшой сервер. Разрез, размеры
-    и проверки считаются по исходной сетке.
+    Every triangle of a view is a matplotlib object: a 330k-face mesh took about 1 GB of memory,
+    a downloaded model of over a million wouldn't fit a small server. The section, the sizes
+    and the checks use the original mesh.
     """
     if len(mesh.faces) <= PREVIEW_MAX_FACES:
         return mesh
@@ -124,27 +124,27 @@ def _draw_view(ax, mesh: trimesh.Trimesh, name: str, basis: np.ndarray, labels: 
     facing = mesh.face_normals @ toward
     visible = facing > 1e-6
 
-    # Грани: экранные x, y и глубина; свет от источника плюс подсветка «к зрителю».
+    # Faces: screen x, y and depth; light from the source plus a "toward the viewer" fill.
     tris = mesh.triangles[visible] @ basis.T
     light = 0.6 * np.clip(mesh.face_normals[visible] @ LIGHT_DIR, 0, 1) + 0.4 * facing[visible]
     face_colors = np.clip(BASE_COLOR[None, :] * (0.35 + 0.65 * light)[:, None], 0, 1)
     face_rgba = np.hstack([face_colors, np.ones((len(face_colors), 1))])
 
-    # Контурные рёбра: острые (> FEATURE_DEG) рядом с видимой гранью и силуэт (видимая | невидимая).
+    # Outline edges: sharp ones (> FEATURE_DEG) next to a visible face, and the silhouette (visible | hidden).
     pairs = mesh.face_adjacency
     vis_a, vis_b = visible[pairs[:, 0]], visible[pairs[:, 1]]
     sharp = mesh.face_adjacency_angles > np.radians(FEATURE_DEG)
     edge_mask = (sharp & (vis_a | vis_b)) | (vis_a != vis_b)
     segs = mesh.vertices[mesh.face_adjacency_edges[edge_mask]] @ basis.T
 
-    # Грани и рёбра в одной очереди от дальних к ближним; ребро чуть «ближе» своих граней, чтобы лечь поверх.
+    # Faces and edges in one far-to-near queue; an edge sits slightly "nearer" than its faces to lie on top.
     depth = np.concatenate([tris[:, :, 2].mean(axis=1), segs[:, :, 2].max(axis=1) + 1e-3])
     polys = [t[:, :2] for t in tris] + [s[:, :2] for s in segs]
     edge_rgba = np.tile(EDGE_COLOR, (len(segs), 1))
     fill = np.vstack([face_rgba, np.zeros((len(segs), 4))])
-    stroke = np.vstack([face_rgba, edge_rgba])           # у граней обводка в цвет грани, иначе видны швы
+    stroke = np.vstack([face_rgba, edge_rgba])           # faces are stroked in their own colour, or seams show
     widths = np.concatenate([np.full(len(tris), 0.3), np.full(len(segs), EDGE_WIDTH)])
-    # Сглаживание только у рёбер: у граней оно даёт светлые щели между соседними треугольниками.
+    # Antialiasing only for edges: on faces it leaves light gaps between neighbouring triangles.
     antialiased = np.concatenate([np.zeros(len(tris), bool), np.ones(len(segs), bool)])
     order = np.argsort(depth, kind="stable")
     ax.add_collection(PolyCollection(
@@ -163,15 +163,15 @@ def _draw_view(ax, mesh: trimesh.Trimesh, name: str, basis: np.ndarray, labels: 
     if labels is None:
         ax.axis("off")
     else:
-        ax.set_xlabel(f"{labels[0]}, мм")
-        ax.set_ylabel(f"{labels[1]}, мм")
+        ax.set_xlabel(f"{labels[0]}, mm")
+        ax.set_ylabel(f"{labels[1]}, mm")
         ax.grid(True, linewidth=0.3)
         ax.set_axisbelow(True)
         ax.tick_params(labelsize=9)
 
 
 def section_loops(mesh: trimesh.Trimesh, axis: str, at: float | None = None) -> list[np.ndarray]:
-    """Замкнутые контуры сечения в плоских координатах (две оставшиеся оси, мм)."""
+    """Closed section contours in plane coordinates (the two other axes, mm)."""
     i = AXES[axis]
     normal = np.eye(3)[i]
     origin = mesh.bounds.mean(axis=0)
@@ -188,14 +188,14 @@ def _draw_section(ax, mesh: trimesh.Trimesh, axis: str, at: float | None) -> Non
     loops = section_loops(mesh, axis, at)
     labels = {"x": ("Y", "Z"), "y": ("X", "Z"), "z": ("X", "Y")}[axis]
     pos = at if at is not None else mesh.bounds.mean(axis=0)[AXES[axis]]
-    ax.set_title(f"Разрез {axis.upper()} = {pos:.1f} мм")
-    ax.set_xlabel(f"{labels[0]}, мм")
-    ax.set_ylabel(f"{labels[1]}, мм")
+    ax.set_title(f"Section {axis.upper()} = {pos:.1f} mm")
+    ax.set_xlabel(f"{labels[0]}, mm")
+    ax.set_ylabel(f"{labels[1]}, mm")
     ax.set_aspect("equal")
     ax.grid(True, linewidth=0.3)
     ax.tick_params(labelsize=8)
     if not loops:
-        ax.text(0.5, 0.5, "плоскость не пересекает модель", ha="center", transform=ax.transAxes)
+        ax.text(0.5, 0.5, "the plane misses the model", ha="center", transform=ax.transAxes)
         return
     patch = PathPatch(_compound_path(loops), facecolor=SECTION_COLOR, edgecolor="black", linewidth=0.6)
     ax.add_patch(patch)
@@ -206,7 +206,7 @@ def _draw_section(ax, mesh: trimesh.Trimesh, axis: str, at: float | None) -> Non
 
 
 def _compound_path(loops: list[np.ndarray]) -> MplPath:
-    """Контуры в один путь: внешние против часовой, дырки по часовой, чтобы заливка не закрывала дыры."""
+    """Contours in one path: outer ones counter-clockwise, holes clockwise, so the fill leaves holes open."""
     paths = [MplPath(loop) for loop in loops]
     verts, codes = [], []
     for k, loop in enumerate(loops):

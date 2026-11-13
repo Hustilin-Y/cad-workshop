@@ -1,10 +1,10 @@
-"""Тела под крепёж для вычитания из детали: отверстия, потай, цековка, гайки, вставки.
+"""Fastener tools to subtract from a part: holes, countersinks, counterbores, nuts, inserts.
 
-Соглашение: каждое тело стоит верхом на Z=0 и уходит вниз (в −Z) — это сторона входа винта.
-Ставится на поверхность так: `body -= Pos(x, y, z_поверхности) * clearance_hole("M4", 5, p)`.
-Для боковой грани тело поворачивают: `Pos(...) * Rot(0, 90, 0) * ...` (вход смотрит в −X).
+Convention: every tool stands with its top at Z=0 and goes down (−Z): that's the side the screw
+enters from. Put it on a surface like this: `body -= Pos(x, y, z_surface) * clearance_hole("M4", 5, p)`.
+For a side face turn the tool: `Pos(...) * Rot(0, 90, 0) * ...` (the entry faces −X).
 
-Допуски берутся из профиля принтера (printer.toml), не из кода.
+Tolerances come from the printer profile (printer.toml), not from code.
 """
 
 from __future__ import annotations
@@ -15,28 +15,28 @@ from build123d import Cone, Cylinder, Part, Pos, RegularPolygon, Box, extrude
 
 from .config import Profile
 
-EPS = 0.01  # на столько тела выступают за поверхность, чтобы булева операция не оставила плёнку
+EPS = 0.01  # tools stick out of the surface this much so the boolean leaves no skin
 
 
 @dataclass(frozen=True)
 class Metric:
-    d: float              # номинальный диаметр резьбы
-    clear_fine: float     # отверстие под винт, точный ряд — ISO 273 (fine)
-    head_d: float         # головка винта с цилиндрической головкой — ISO 4762 (dk max)
-    head_h: float         # высота головки — ISO 4762 (k max)
-    cbore_d: float        # цековка под ISO 4762 — DIN 974-1 (ряд 1)
-    csk_d: float          # зенковка под потайную головку 90° — ISO 15065 (= dk теор. max по ISO 7046-1)
-    nut_s: float          # гайка под ключ — ISO 4032 (s, размер под ключ)
-    nut_m: float          # высота гайки — ISO 4032 (m max)
-    insert_d: float       # отверстие под термовставку — D3 из таблиц CNC Kitchen и ruthex (для печатного отверстия)
-    insert_l: float       # длина термовставки (ориентир)
+    d: float              # nominal thread diameter
+    clear_fine: float     # clearance hole, fine series — ISO 273 (fine)
+    head_d: float         # socket head cap screw head — ISO 4762 (dk max)
+    head_h: float         # head height — ISO 4762 (k max)
+    cbore_d: float        # counterbore for ISO 4762 — DIN 974-1 (series 1)
+    csk_d: float          # countersink for a 90° countersunk head — ISO 15065 (= theoretical dk max, ISO 7046-1)
+    nut_s: float          # nut across flats — ISO 4032 (s)
+    nut_m: float          # nut height — ISO 4032 (m max)
+    insert_d: float       # heat-set insert hole — D3 from the CNC Kitchen and ruthex tables (for a printed hole)
+    insert_l: float       # heat-set insert length (typical)
 
 
-# Справочные размеры, мм. Источники: ISO 273:1979, ISO 4762:2004, DIN 974-1:2008,
-# ISO 7046-1:2011 и ISO 15065:2005, ISO 4032:2012. Зенковка — по теоретическому dk головки
-# (6.3 для M3): фактическая головка меньше (5.5) из-за цилиндрического пояска, и по ней
-# зенковка вышла бы мелкой — головка торчала бы на 0.4–0.5 мм. Вставки зависят от
-# производителя: замерьте свои штангенциркулем и передайте hole_d/length явно, если отличаются.
+# Reference sizes, mm. Sources: ISO 273:1979, ISO 4762:2004, DIN 974-1:2008,
+# ISO 7046-1:2011 and ISO 15065:2005, ISO 4032:2012. The countersink follows the head's theoretical
+# dk (6.3 for M3): the actual head is smaller (5.5) because of its cylindrical land, and a
+# countersink sized to it would be shallow, leaving the head 0.4–0.5 mm proud. Inserts differ by
+# maker: measure yours with a caliper and pass hole_d/length explicitly if they differ.
 METRIC: dict[str, Metric] = {
     "M2":   Metric(2.0, 2.2, 3.8, 2.0, 4.3, 4.4, 4.0, 1.6, 3.2, 4.0),
     "M2.5": Metric(2.5, 2.7, 4.5, 2.5, 5.0, 5.5, 5.0, 2.0, 4.0, 5.7),
@@ -49,23 +49,23 @@ METRIC: dict[str, Metric] = {
 def metric(size: str) -> Metric:
     key = size.upper()
     if key not in METRIC:
-        raise ValueError(f"Крепёж {size} не описан, есть: {', '.join(METRIC)}")
+        raise ValueError(f"fastener {size} isn't described, there are: {', '.join(METRIC)}")
     return METRIC[key]
 
 
 def _down_cylinder(d: float, depth: float) -> Part:
-    """Цилиндр от Z=+EPS до Z=−depth."""
+    """A cylinder from Z=+EPS down to Z=−depth."""
     return Pos(0, 0, (EPS - depth) / 2) * Cylinder(d / 2, depth + EPS)
 
 
 def clearance_hole(size: str, depth: float, p: Profile) -> Part:
-    """Сквозное/глухое отверстие под винт: ISO 273 fine + зазор принтера."""
+    """Through or blind hole for a screw: ISO 273 fine + the printer's clearance."""
     m = metric(size)
     return _down_cylinder(m.clear_fine + p.hole_clearance_mm, depth)
 
 
 def counterbore_hole(size: str, depth: float, p: Profile, head_depth: float | None = None) -> Part:
-    """Отверстие с цековкой под цилиндрическую головку ISO 4762 (головка утоплена заподлицо)."""
+    """Hole with a counterbore for an ISO 4762 socket head (the head sits flush)."""
     m = metric(size)
     head_depth = m.head_h + p.layer_mm if head_depth is None else head_depth
     hole = clearance_hole(size, depth, p)
@@ -73,47 +73,47 @@ def counterbore_hole(size: str, depth: float, p: Profile, head_depth: float | No
 
 
 def countersunk_hole(size: str, depth: float, p: Profile) -> Part:
-    """Отверстие под потайной винт 90°: конус от диаметра головки до отверстия."""
+    """Hole for a 90° countersunk screw: a cone from the head diameter down to the hole."""
     m = metric(size)
     return _countersink(m.clear_fine + p.hole_clearance_mm, m.csk_d + p.hole_clearance_mm, depth)
 
 
-# Саморезы по дереву/дюбелю с потайной головкой 90°: d → диаметр головки dk.
-# Источник: DIN 7997 (шурупы с потайной головкой), dk ≈ 2·d. У саморезов разных марок
-# головка отличается на ±0.5 мм — при возможности замерить и передать head_d явно.
+# Countersunk wood/plug screws with a 90° head: d → head diameter dk.
+# Source: DIN 7997 (countersunk wood screws), dk ≈ 2·d. Heads of different brands differ by
+# ±0.5 mm: measure if you can and pass head_d explicitly.
 WOOD_SCREW_HEAD: dict[float, float] = {3.0: 6.0, 3.5: 7.0, 4.0: 8.0, 4.5: 9.0, 5.0: 10.0, 6.0: 12.0}
-WOOD_SCREW_CLEARANCE = 0.4  # к диаметру резьбы: аналог ISO 273 fine, чтобы резьба шла свободно и не рвала пластик
+WOOD_SCREW_CLEARANCE = 0.4  # added to the thread diameter, like ISO 273 fine, so the thread passes freely and doesn't tear the plastic
 
 
 def wood_screw_countersunk_hole(d: float, depth: float, p: Profile, head_d: float | None = None) -> Part:
-    """Сквозное отверстие под потайной саморез диаметром d (мм): резьба проходит свободно, головка утоплена."""
+    """Through hole for a countersunk wood screw of diameter d (mm): the thread passes freely, the head sits flush."""
     if head_d is None:
         if d not in WOOD_SCREW_HEAD:
-            raise ValueError(f"Саморез {d} мм не описан, есть: {', '.join(f'{k:g}' for k in WOOD_SCREW_HEAD)}; или передайте head_d")
+            raise ValueError(f"wood screw {d} mm isn't described, there are: {', '.join(f'{k:g}' for k in WOOD_SCREW_HEAD)}; or pass head_d")
         head_d = WOOD_SCREW_HEAD[d]
     return _countersink(d + WOOD_SCREW_CLEARANCE + p.hole_clearance_mm, head_d + p.hole_clearance_mm, depth)
 
 
 def _countersink(hole_d: float, head_d: float, depth: float) -> Part:
-    cone_h = (head_d - hole_d) / 2  # 90°: высота равна разности радиусов
+    cone_h = (head_d - hole_d) / 2  # 90°: the height equals the difference of the radii
     cone = Pos(0, 0, -cone_h / 2 + EPS / 2) * Cone(hole_d / 2, head_d / 2 + EPS, cone_h + EPS)
     return _down_cylinder(hole_d, depth) + cone
 
 
 def chamfer_ring(d: float, size: float = 0.6) -> Part:
-    """Зенковка кромки отверстия диаметром d: фаска 45° шириной size (облегчает вход, убирает наплыв)."""
+    """Chamfer on the edge of a hole of diameter d: 45°, `size` wide (eases entry, removes the lip)."""
     return Pos(0, 0, -size / 2 + EPS / 2) * Cone(d / 2, d / 2 + size + EPS, size + EPS)
 
 
 def nut_pocket(size: str, p: Profile, depth: float | None = None, slot: float = 0.0) -> Part:
-    """Шестигранный карман под гайку ISO 4032 (плоскости вдоль X).
+    """Hexagonal pocket for an ISO 4032 nut (flats along X).
 
-    slot > 0 продлевает карман вбок по +X на эту длину — паз, чтобы задвинуть гайку сбоку.
+    slot > 0 extends the pocket sideways along +X by that length: a slot to slide the nut in from the side.
     """
     m = metric(size)
-    s = m.nut_s + p.slide_fit_mm                       # размер под ключ с зазором
+    s = m.nut_s + p.slide_fit_mm                       # across flats with clearance
     depth = m.nut_m + p.layer_mm if depth is None else depth
-    # RegularPolygon задаётся описанной окружностью, s = 2·R·cos30°. Вершины на 0° и 180°, значит грани вдоль X.
+    # RegularPolygon takes the circumscribed circle, s = 2·R·cos30°. Vertices at 0° and 180°, so the flats run along X.
     hexagon = RegularPolygon(s / (3 ** 0.5), 6)
     pocket = Pos(0, 0, -depth) * extrude(hexagon, amount=depth + EPS)
     if slot > 0:
@@ -122,10 +122,10 @@ def nut_pocket(size: str, p: Profile, depth: float | None = None, slot: float = 
 
 
 def insert_hole(size: str, p: Profile, hole_d: float | None = None, length: float | None = None, extra: float = 1.0) -> Part:
-    """Отверстие под термовставку: диаметр по производителю, глубина = длина вставки + extra под вытесненный пластик.
+    """Hole for a heat-set insert: the maker's diameter, depth = insert length + `extra` for displaced plastic.
 
-    Зазор принтера сюда не добавляется: D3 производителей уже рассчитан на печатное отверстие,
-    а вставка должна вплавиться в стенку, а не войти свободно. p оставлен ради единой сигнатуры.
+    No printer clearance is added: the makers' D3 is meant for a printed hole, and the insert has to
+    melt into the wall rather than slide in. p is kept for a uniform signature.
     """
     m = metric(size)
     d = m.insert_d if hole_d is None else hole_d

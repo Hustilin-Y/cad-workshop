@@ -1,1 +1,1 @@
-"""Общая библиотека CAD-мастерской: профиль принтера, экспорт, превью, проверки."""
+"""The CAD workshop's library: printer profile, export, preview, checks."""

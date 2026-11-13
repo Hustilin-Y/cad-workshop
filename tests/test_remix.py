@@ -1,4 +1,4 @@
-"""Этап 4: ремиксы — операции над сетками, new remix, проверка 7, защита source/, путь через STEP."""
+"""Stage 4: remixes: mesh operations, new remix, check 7, protecting source/, the STEP path."""
 
 import hashlib
 import math
@@ -24,7 +24,7 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-# --- пример из репозитория ----------------------------------------------------
+# --- the repository's example ------------------------------------------------
 
 
 def test_example_remix_volume_and_source_untouched(capsys, repo_copy):
@@ -33,8 +33,8 @@ def test_example_remix_volume_and_source_untouched(capsys, repo_copy):
     before = _sha(source)
     assert main(["build", str(example)]) == 0
     out = capsys.readouterr().out
-    assert "[OK  ] 7. Ожидаемое изменение" in out
-    assert "[OK  ] Оригинал" in out
+    assert "[OK  ] 7. Expected change" in out
+    assert "[OK  ] Original" in out
     assert "FAIL" not in out and "WARN" not in out
     assert _sha(source) == before == cad._recorded_hash(example / "SOURCE.md")
 
@@ -43,7 +43,7 @@ def test_example_remix_volume_and_source_untouched(capsys, repo_copy):
     assert delta == pytest.approx(module.EXPECTED_VOLUME_DELTA, rel=0.01)
 
 
-@pytest.mark.skipif(not (ROOT / ".git").exists() or shutil.which("git") is None, reason="нужен git-клон проекта")
+@pytest.mark.skipif(not (ROOT / ".git").exists() or shutil.which("git") is None, reason="needs a git clone of the project")
 def test_example_source_is_tracked_but_foreign_sources_are_not():
     def ignored(rel: str) -> bool:
         return subprocess.run(["git", "check-ignore", "-q", rel], cwd=ROOT).returncode == 0
@@ -53,12 +53,12 @@ def test_example_source_is_tracked_but_foreign_sources_are_not():
     assert ignored("remix/example-stub/out/example-stub.stl")
 
 
-# --- полный цикл в чистой папке -------------------------------------------------
+# --- the full cycle in a clean folder -----------------------------------------
 
 
 @pytest.fixture
 def workshop(tmp_path, monkeypatch):
-    """Пустая «мастерская»: new part/remix пишут в tmp_path, шаблоны берутся из проекта."""
+    """An empty "workshop": new part/remix write into tmp_path, the templates come from the project."""
     monkeypatch.setattr(cad, "ROOT", tmp_path)
     downloads = tmp_path / "downloads"
     downloads.mkdir()
@@ -72,18 +72,18 @@ def test_new_remix_stl_flow(workshop, capsys):
 
     assert main(["new", "remix", "holder-fix", str(original)]) == 0
     out = capsys.readouterr().out
-    assert "50.00 × 30.00 × 20.00 мм" in out                       # inspect запускается сразу
+    assert "50.00 × 30.00 × 20.00 mm" in out                       # inspect runs right away
     folder = root / "remix" / "holder-fix"
     copy = folder / "source" / "holder.stl"
-    if getattr(os, "geteuid", lambda: 1)() != 0:                   # root пишет куда угодно
-        assert not os.access(copy, os.W_OK)                        # оригинал только для чтения
+    if getattr(os, "geteuid", lambda: 1)() != 0:                   # root can write anywhere
+        assert not os.access(copy, os.W_OK)                        # the original is read-only
     assert cad._recorded_hash(folder / "SOURCE.md") == _sha(original)
 
-    # Нетронутый шаблон собирается, но предупреждает, что правки нет.
+    # The untouched template builds but warns that nothing was edited.
     assert main(["build", str(folder)]) == 0
-    assert "[WARN] 7. Правка" in capsys.readouterr().out
+    assert "[WARN] 7. Edit" in capsys.readouterr().out
 
-    # Правка: отверстие Ø10 насквозь.
+    # The edit: a Ø10 through hole.
     text = (folder / "remix.py").read_text(encoding="utf-8")
     text = text.replace(
         "    return body\n",
@@ -92,7 +92,7 @@ def test_new_remix_stl_flow(workshop, capsys):
     (folder / "remix.py").write_text(text, encoding="utf-8")
     assert main(["build", str(folder)]) == 0
     out = capsys.readouterr().out
-    assert "[OK  ] 7. Ожидаемое изменение" in out
+    assert "[OK  ] 7. Expected change" in out
     assert _sha(copy) == _sha(original)
 
 
@@ -106,11 +106,11 @@ def test_build_fails_when_source_changed(workshop, capsys):
     source_md.write_text(source_md.read_text(encoding="utf-8").replace(_sha(original), "0" * 64), encoding="utf-8")
     capsys.readouterr()
     assert main(["build", str(folder)]) == 1
-    assert "[FAIL] Оригинал" in capsys.readouterr().out
+    assert "[FAIL] Original" in capsys.readouterr().out
 
 
 def test_new_remix_step_flow(workshop, capsys):
-    """Путь через STEP: правка точная (B-rep), на выходе есть и STEP."""
+    """The STEP path: the edit is exact (B-rep), and a STEP comes out too."""
     root, downloads = workshop
     original = downloads / "plate.step"
     export_step(Pos(0, 0, 3) * Box(40, 40, 6), original)
@@ -141,10 +141,10 @@ def test_new_remix_rejects_bad_input(workshop, capsys):
     assert main(["new", "remix", "a", str(downloads / "missing.stl")]) == 2
     assert main(["new", "remix", "b", str(downloads / "model.blend")]) == 2
     out = capsys.readouterr().out
-    assert "файл не найден" in out and "не поддерживается" in out
+    assert "no such file" in out and "isn't supported" in out
 
 
-# --- операции над сетками -----------------------------------------------------
+# --- mesh operations ----------------------------------------------------------
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ def test_cut_and_split(block):
 
 
 def test_add_and_subtract_with_build123d_tools(block):
-    boss = Pos(0, 0, 22.5) * Cylinder(5, 10)             # Z 17.5…27.5: 2.5 мм внутри блока, 7.5 снаружи
+    boss = Pos(0, 0, 22.5) * Cylinder(5, 10)             # Z 17.5…27.5: 2.5 mm inside the block, 7.5 outside
     added = m.add(block, boss)
     assert added.volume == pytest.approx(block.volume + math.pi * 25 * 7.5, rel=1e-3)
     assert m.subtract(added, boss).volume < block.volume
@@ -179,10 +179,10 @@ def test_add_and_subtract_with_build123d_tools(block):
 
 def test_repair_broken_download(block):
     broken = block.copy()
-    broken.faces[:5] = broken.faces[:5, ::-1]             # часть треугольников вывернута
+    broken.faces[:5] = broken.faces[:5, ::-1]             # some triangles turned inside out
     broken = trimesh.Trimesh(
         vertices=broken.vertices,
-        faces=np.vstack([broken.faces, broken.faces[:3]]),   # дубли треугольников
+        faces=np.vstack([broken.faces, broken.faces[:3]]),   # duplicate triangles
         process=False,
     )
     result = m.repair(broken)
@@ -192,7 +192,7 @@ def test_repair_broken_download(block):
     inverted = block.copy()
     inverted.invert()
     fixed = m.repair(inverted)
-    assert fixed.mesh.volume > 0 and any("наизнанку" in n for n in fixed.notes)
+    assert fixed.mesh.volume > 0 and any("inside out" in n for n in fixed.notes)
 
 
 def test_open_mesh_rejected_with_hint(block):

@@ -1,15 +1,15 @@
-# Профиль принтера и допуски. Все модели берут значения отсюда, а не хардкодят.
-# Ответы на развилки ТЗ (2026-11-03): сопло 0.4, Windows, PNG + OCP-вьюер,
-# выход STEP+STL+3MF, GitHub (сначала приватный, теперь публичный), пластик по умолчанию PLA.
+# Printer profile and tolerances. Every model takes its values from here instead of hard-coding them.
+# Decisions from the spec (2026-11-03): nozzle 0.4, Windows, PNG + OCP viewer,
+# STEP+STL+3MF output, GitHub (private at first, public now), PLA by default.
 
 [printer]
 model = "Bambu Lab P2S"
-build_volume_mm = [256, 256, 256]   # официальные данные Bambu Lab
-bed_margin_mm = 5                   # запас до края стола при проверке габаритов
-nozzle_mm = 0.4                     # активное сопло; сменить на одно из [nozzles.*]
-material = "PLA"                    # пластик по умолчанию; сменить на один из [materials.*]
+build_volume_mm = [256, 256, 256]   # Bambu Lab's official figures
+bed_margin_mm = 5                   # margin to the bed's edge in the size check
+nozzle_mm = 0.4                     # the nozzle in use; switch to one of [nozzles.*]
+material = "PLA"                    # default plastic; switch to one of [materials.*]
 
-# Профили сопел. min_wall = 3 периметра; меняется вместе с nozzle_mm выше.
+# Nozzle profiles. min_wall = 3 perimeters; follows nozzle_mm above.
 [nozzles."0.2"]
 min_wall_mm = 0.6
 layer_mm = 0.1
@@ -23,29 +23,29 @@ layer_mm = 0.3
 min_wall_mm = 2.4
 layer_mm = 0.4
 
-[tolerances]           # стартовые значения для сопла 0.4 и PLA, уточняются калибровкой
-hole_clearance_mm = 0.2      # к диаметру отверстия под вал/винт
+[tolerances]           # starting values for a 0.4 nozzle and PLA, refined by calibration
+hole_clearance_mm = 0.2      # added to the diameter of a hole for a shaft/screw
 press_fit_mm = 0.05
 slide_fit_mm = 0.3
 
-# Поправки к допускам по пластику (прибавляются к [tolerances]) и подсказки.
+# Per-plastic additions to the tolerances (added to [tolerances]) and hints.
 [materials.PLA]
 clearance_add_mm = 0.0
 density_g_cm3 = 1.24
 # price_per_kg = 0          # spool price in [estimate] currency; set it to see the cost in the build report
-note = "жёсткий, точный; плывёт от 55 °C, не для салона авто и кипятка"
+note = "stiff, precise; softens from 55 °C: not for a car interior or boiling water"
 [materials.PETG]
 clearance_add_mm = 0.05
 density_g_cm3 = 1.27
-note = "вязкий, ударопрочный, до ~75 °C; чуть больше зазоры, тянет нити"
+note = "tough, impact-resistant, up to ~75 °C; slightly larger clearances, strings"
 [materials.ABS]
 clearance_add_mm = 0.1
 density_g_cm3 = 1.04
-note = "до ~95 °C, даёт усадку ~0.5–0.7 %; печатать с закрытой крышкой"
+note = "up to ~95 °C, shrinks ~0.5–0.7 %; print with the lid closed"
 [materials.ASA]
 clearance_add_mm = 0.1
 density_g_cm3 = 1.07
-note = "как ABS, но УФ-стойкий, для улицы; закрытая камера"
+note = "like ABS but UV-resistant, for outdoors; enclosed chamber"
 
 # Filament estimate in the build report (cadlib/estimate.py): shells + infill, ±20% of the slicer.
 [estimate]

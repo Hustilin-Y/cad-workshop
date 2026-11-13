@@ -3,18 +3,18 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# сгенерированные файлы
+# generated files
 out/
 **/out/
 
-# чужие модели не публикуем никогда (даже в приватном репо, на случай смены видимости)
+# other people's models are never published (not even in a private repo, in case visibility changes)
 remix/*/source/
-# исключение: сгенерированные нами заглушки примеров (CC0)
+# except our own generated example stubs (CC0)
 !remix/example-*/source/
 
-# лого мастерской — собственность владельца, в публичный репозиторий не попадает
+# the workshop's logo belongs to its owner and stays out of the public repository
 assets/logo/
 cadlib/logo_shiba.json
 
-# временные файлы тестов
+# test scratch files
 tests/_tmp/

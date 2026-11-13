@@ -1,27 +1,27 @@
 # example-bracket
 
-Г-образный кронштейн: полка и стойка 40 × 25 мм, толщина 5 мм, по отверстию под M4 в каждой. Это пример детали «с нуля»: все размеры заданы параметрами в начале [model.py](model.py), допуски берутся из `printer.toml`.
+An L-shaped bracket: shelf and post 40 × 25 mm, 5 mm thick, one M4 hole in each. It is the example of a part "from scratch": every size is a parameter at the top of [model.py](model.py), and tolerances come from `printer.toml`.
 
-## Ключевые размеры
+## Key sizes
 
-| Параметр | Значение | Откуда |
+| Parameter | Value | Source |
 |---|---|---|
-| Полка × стойка × ширина | 40 × 40 × 25 мм | пример |
-| Толщина | 5 мм | ≥ мин. стенки 1.2 мм для сопла 0.4 |
-| Внутреннее скругление | R6 | снимает концентрацию напряжений в углу |
-| Наружное скругление | R11 = R6 + толщина | стенка в углу везде 5 мм |
-| Отверстия M4 | Ø4.5 = 4.3 (ISO 273 fine) + 0.2 зазор | `printer.toml` |
-| Фаска на входе отверстий | 0.6 мм × 45° | убирает наплыв первого слоя |
+| Shelf × post × width | 40 × 40 × 25 mm | example |
+| Thickness | 5 mm | ≥ the 1.2 mm minimum wall for a 0.4 nozzle |
+| Inner rounding | R6 | relieves the stress concentration in the corner |
+| Outer rounding | R11 = R6 + thickness | the corner wall is 5 mm all round |
+| M4 holes | Ø4.5 = 4.3 (ISO 273 fine) + 0.2 clearance | `printer.toml` |
+| Chamfer at the holes' entry | 0.6 mm × 45° | removes the first-layer lip |
 
-Отверстия стоят по центру прямого участка каждой ножки. Винт полки входит сверху, винт стойки входит со стороны полки.
+The holes sit in the middle of each leg's straight part. The shelf's screw enters from above, the post's screw from the shelf's side.
 
-## Печать
+## Printing
 
-- Пластик: PLA, для нагрузки или тепла лучше PETG.
-- Ориентация (предложение): **на боку**, Г-профилем на столе. Слои идут вдоль изгиба, поэтому угол не расслоится под нагрузкой. Отверстия в этой ориентации горизонтальные, Ø4.5 печатается мостом без поддержек.
-- Если печатать как в модели (полкой вниз), наружное скругление у стола даёт нависание (5% площади), а слои в углу лягут поперёк нагрузки. Угол заметно слабее.
-- Поддержки не нужны.
+- Plastic: PLA; for load or heat better PETG.
+- Orientation (suggested): **on its side**, with the L profile on the bed. The layers then run along the bend, so the corner won't delaminate under load. The holes are horizontal in this orientation, and Ø4.5 bridges without supports.
+- Printed as modelled (shelf down), the outer rounding at the bed is an overhang (5% of the area) and the corner's layers lie across the load. The corner is noticeably weaker.
+- No supports needed.
 
-## История
+## History
 
-- 2026-11-03: создан как эталонный пример (этап 3 ТЗ).
+- 2026-11-03: created as the reference example (stage 3 of the spec).

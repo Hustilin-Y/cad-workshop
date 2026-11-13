@@ -1,19 +1,19 @@
 # {{name}}
 
-<Что это, куда ставится, с чем сопрягается.>
+<What it is, where it goes, what it mates with.>
 
-## Ключевые размеры
+## Key sizes
 
-| Параметр | Значение | Откуда |
+| Parameter | Value | Source |
 |---|---|---|
-| | | замер штангенциркулем / чертёж / допуск принтера |
+| | | caliper measurement / drawing / printer tolerance |
 
-## Печать
+## Printing
 
-- Пластик: PLA
-- Ориентация (предложение): 
-- Поддержки: 
+- Plastic: PLA
+- Orientation (suggested): 
+- Supports: 
 
-## История
+## History
 
-- {{date}}: создана.
+- {{date}}: created.

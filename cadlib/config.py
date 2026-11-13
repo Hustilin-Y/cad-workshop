@@ -1,4 +1,4 @@
-"""Загрузка printer.toml и расчёт действующих допусков под сопло и пластик."""
+"""Loads printer.toml and works out the tolerances in effect for a nozzle and a plastic."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class Profile:
 
     @property
     def usable_volume_mm(self) -> tuple[float, float, float]:
-        """Объём стола с запасом bed_margin_mm по XY (с каждой стороны) и сверху."""
+        """Build volume minus bed_margin_mm in XY (on each side) and at the top."""
         x, y, z = self.build_volume_mm
         m = self.bed_margin_mm
         return (x - 2 * m, y - 2 * m, z - m)
@@ -45,7 +45,7 @@ def load_profile(
     material: str | None = None,
     path: Path = PRINTER_TOML,
 ) -> Profile:
-    """Профиль из printer.toml; nozzle/material переопределяют значения по умолчанию."""
+    """The profile from printer.toml; nozzle/material override the defaults."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     printer = data["printer"]
     tol = data["tolerances"]
@@ -55,12 +55,12 @@ def load_profile(
 
     nozzles = data.get("nozzles", {})
     if _nozzle_key(nozzle) not in nozzles:
-        raise ValueError(f"Сопло {nozzle} мм не описано в printer.toml, есть: {', '.join(nozzles)}")
+        raise ValueError(f"nozzle {nozzle} mm isn't described in printer.toml, there are: {', '.join(nozzles)}")
     nz = nozzles[_nozzle_key(nozzle)]
 
     materials = data.get("materials", {})
     if material not in materials:
-        raise ValueError(f"Пластик {material} не описан в printer.toml, есть: {', '.join(materials)}")
+        raise ValueError(f"plastic {material} isn't described in printer.toml, there are: {', '.join(materials)}")
     mat = materials[material]
     add = float(mat.get("clearance_add_mm", 0.0))
 

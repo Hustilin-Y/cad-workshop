@@ -1,12 +1,12 @@
-"""Отделка: скругления и фаски, которые не портят печать.
+"""Finishing: roundings and chamfers that don't spoil the print.
 
-Правило для печати: рёбра, вертикальные в ориентации печати, — скругляются как угодно;
-рёбра на столе — только фаска 45° (скругление у стола дало бы нависание, а фаска
-заодно убирает «слоновью ногу»); рёбра сверху — скругление любое.
+The printing rule: edges vertical in the print orientation can be rounded any way;
+edges on the bed get only a 45° chamfer (a rounding there would be an overhang, and the chamfer
+also hides the elephant's foot); top edges, any rounding.
 
-OCCT на сложном теле нередко отказывается скруглить ребро. Поэтому рёбра
-обрабатываются по одному: если радиус не проходит, пробуется половина, иначе ребро
-пропускается — деталь не ломается из-за косметики.
+On a complex body OCCT often refuses to round an edge. So edges
+are done one by one: if the radius fails, half of it is tried, otherwise the edge
+is skipped: the part doesn't break over cosmetics.
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from build123d import Edge, Solid, chamfer, fillet
 
 
 def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]:
-    # Сначала все рёбра одной операцией: контур грани (цепочка касательных рёбер) OCCT
-    # скругляет только целиком — по одному соседние рёбра меняют длину и перестают находиться.
+    # First all edges in one operation: OCCT rounds a face's outline (a chain of tangent edges)
+    # only as a whole; one by one, neighbouring edges change length and can no longer be found.
     for s in (size, size / 2):
         try:
             result = op(edges, s)
@@ -28,7 +28,7 @@ def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]
     done = 0
     for edge in edges:
         for s in (size, size / 2):
-            # После каждой операции рёбра тела пересоздаются: ищем текущее ребро по положению.
+            # After each operation the body's edges are recreated: find the current edge by position.
             current = _find_edge(body, edge)
             if current is None:
                 break
@@ -39,7 +39,7 @@ def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]
                     body = solids[0]
                     done += 1
                     break
-            except Exception:  # noqa: BLE001  OCCT бросает разные исключения на неудачном скруглении
+            except Exception:  # noqa: BLE001  OCCT raises various exceptions on a failed rounding
                 continue
     return body, done
 
@@ -53,10 +53,10 @@ def _find_edge(body: Solid, edge: Edge, tol: float = 1e-4):
 
 
 def soften(body: Solid, edges: list[Edge], radius: float) -> tuple[Solid, int]:
-    """Скруглить рёбра по одному; возвращает (тело, сколько рёбер скруглено)."""
+    """Round edges one by one; returns (body, how many edges were rounded)."""
     return _apply(lambda e, r: fillet(e, r), body, edges, radius)
 
 
 def bevel(body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]:
-    """Фаска на рёбрах по одному; возвращает (тело, сколько рёбер обработано)."""
+    """Chamfer edges one by one; returns (body, how many edges were done)."""
     return _apply(lambda e, s: chamfer(e, s), body, edges, size)

@@ -1,10 +1,10 @@
-# Источник: {{file}}
+# Source: {{file}}
 
-- Ссылка: 
-- Автор: 
-- Лицензия: 
-- Скачано: {{date}}
-- Файл: `source/{{file}}`
+- Link: 
+- Author: 
+- Licence: 
+- Downloaded: {{date}}
+- File: `source/{{file}}`
 - SHA-256: `{{sha256}}`
 
-Лицензия определяет, можно ли публиковать ремикс (часто CC BY-NC-SA: с указанием автора, некоммерчески, под той же лицензией). Хэш нужен `build`: если оригинал изменится, сборка упадёт.
+The licence decides whether the remix may be published (often CC BY-NC-SA: with attribution, non-commercial, under the same licence). `build` needs the hash: if the original changes, the build fails.

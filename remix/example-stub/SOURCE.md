@@ -1,10 +1,10 @@
-# Источник: stub-block.stl
+# Source: stub-block.stl
 
-- Ссылка: нет. Заглушка сгенерирована в проекте (build123d: блок 60 × 40 × 20, вертикальные рёбра R5, тесселяция 0.02 мм)
-- Автор: CAD-мастерская
-- Лицензия: CC0, свободно
-- Скачано: 2026-11-03
-- Файл: `source/stub-block.stl`
+- Link: none. The stub was generated in the project (build123d: a 60 × 40 × 20 block, vertical edges R5, tessellation 0.02 mm)
+- Author: the CAD workshop
+- Licence: CC0, free
+- Downloaded: 2026-11-03
+- File: `source/stub-block.stl`
 - SHA-256: `b1d44c7d5976c796e174af2a1813bc172f32ea9145eb5a886e33b1badef00b44`
 
-Лицензия определяет, можно ли публиковать ремикс (часто CC BY-NC-SA: с указанием автора, некоммерчески, под той же лицензией). Хэш нужен `build`: если оригинал изменится, сборка упадёт.
+The licence decides whether the remix may be published (often CC BY-NC-SA: with attribution, non-commercial, under the same licence). `build` needs the hash: if the original changes, the build fails.

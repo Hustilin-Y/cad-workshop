@@ -1,7 +1,7 @@
-"""{{name}}: ремикс {{file}} (STEP — правки точные, как у своей детали).
+"""{{name}}: a remix of {{file}} (STEP: exact edits, as with your own part).
 
-Сборка: uv run cad.py build remix/{{name}}
-Оригинал в source/ только для чтения; всё пишется в out/.
+Build: uv run cad.py build remix/{{name}}
+The original in source/ is read-only; everything is written to out/.
 """
 
 from pathlib import Path
@@ -13,21 +13,21 @@ from cadlib import fasteners as f  # noqa: F401
 HERE = Path(__file__).resolve().parent
 SOURCE = "source/{{file}}"
 
-# --- план правок (после `cad.py inspect`, 2–4 пункта) ---
+# --- plan of edits (after `cad.py inspect`, 2–4 points) ---
 # 1.
 # 2.
 
-# --- параметры, мм ---
+# --- parameters, mm ---
 
 NAME = "{{name}}"
 EXPECTED_BODIES = 1
-EXPECTED_VOLUME_DELTA = None    # мм³, если изменение можно посчитать заранее (проверка ±1%)
+EXPECTED_VOLUME_DELTA = None    # mm³, if the change can be worked out in advance (checked to ±1%)
 SECTION = None
 
 
 def build(p):
     body = import_step(HERE / SOURCE)
-    # Примеры:
+    # Examples:
     # body -= Pos(x, y, z_top) * f.clearance_hole("M3", 10, p)
     # body += Pos(x, y, z) * Box(10, 10, 2)
     return body

@@ -1,4 +1,4 @@
-"""В коде проекта нет сетевых вызовов и обращений к принтеру (критерий приёмки ТЗ)."""
+"""The project's code makes no network calls and never talks to the printer (an acceptance criterion of the spec)."""
 
 import re
 from pathlib import Path
@@ -20,4 +20,4 @@ def _sources():
 
 def test_no_network_imports():
     offenders = [str(f.relative_to(ROOT)) for f in _sources() if FORBIDDEN.search(f.read_text(encoding="utf-8"))]
-    assert not offenders, f"сетевые импорты в: {offenders}"
+    assert not offenders, f"network imports in: {offenders}"

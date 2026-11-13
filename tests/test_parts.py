@@ -1,4 +1,4 @@
-"""Этап 3: пример кронштейна и команда new part."""
+"""Stage 3: the bracket example and the new part command."""
 
 import math
 from pathlib import Path
@@ -14,9 +14,9 @@ BRACKET = ROOT / "parts" / "example-bracket"
 
 
 def _expected_bracket_volume(m, hole_d: float) -> float:
-    """Объём кронштейна аналитически: Г-профиль ± скругления, минус отверстия и фаски."""
+    """The bracket's volume worked out by hand: the L profile ± roundings, minus holes and chamfers."""
     t, r, ro, c = m.THICKNESS, m.INNER_FILLET, m.OUTER_FILLET, m.ENTRY_CHAMFER
-    corner = lambda radius: radius**2 * (1 - math.pi / 4)  # noqa: E731  площадь «уголка» скругления
+    corner = lambda radius: radius**2 * (1 - math.pi / 4)  # noqa: E731  area of a rounding's "corner"
     profile = m.LEG_X * t + (m.LEG_Z - t) * t + corner(r) - corner(ro)
     r1, r2 = hole_d / 2, hole_d / 2 + c
     chamfer_extra = math.pi * c / 3 * (r1**2 + r1 * r2 + r2**2) - math.pi * r1**2 * c
@@ -46,7 +46,7 @@ def test_bracket_rejects_thin_wall(monkeypatch):
     monkeypatch.setattr(module, "THICKNESS", 1.0)
     from cadlib.config import load_profile
 
-    with pytest.raises(ValueError, match="минимальной стенки"):
+    with pytest.raises(ValueError, match="minimum wall"):
         module.build(load_profile())
 
 
@@ -58,7 +58,7 @@ def test_new_part_from_template(tmp_path, monkeypatch, capsys):
     assert "# wall-hook" in (folder / "README.md").read_text(encoding="utf-8")
     assert main(["build", str(folder)]) == 0
 
-    assert main(["new", "part", "wall-hook"]) == 2       # уже есть
-    assert main(["new", "part", "Крюк"]) == 2            # недопустимое имя
+    assert main(["new", "part", "wall-hook"]) == 2       # already exists
+    assert main(["new", "part", "Крюк"]) == 2            # an invalid name
     out = capsys.readouterr().out
-    assert "уже существует" in out and "только строчные" in out
+    assert "already exists" in out and "lowercase Latin letters" in out

@@ -1,19 +1,20 @@
-"""Лого мастерской: мультяшная сиба-ину с бабочкой — «барельеф» и «контурный» стили.
+"""The workshop's logo: a cartoon shiba inu with a bow tie, in "relief" and "outline" styles.
 
-Само лого (картинка и контуры) — собственность владельца мастерской, не входит в репозиторий
-и не распространяется под MIT. Этот код без данных лого собирает детали без него.
+The logo itself (the picture and its contours) belongs to the workshop's owner: it is not in the
+repository and not under the MIT licence. Without the logo data this code builds parts without it.
 
-Контуры слоёв сняты с картинки пользователя (assets/logo/shiba-styles-front.webp) скриптом
-tools/logo_extract.py и лежат в logo_shiba.json рядом: высота лого = 1, центр (0, 0), Y вверх.
-Слои: silhouette (голова + бабочка), mask (белая маска морды), eyes, nose, mouth, tongue,
-bow (бабочка), knot (узел). Поверх картинки: глаза увеличены (EYE_SCALE), добавлены брови-«точки»
-сибы (brows, BROW_*) — по просьбе пользователя.
+The layer contours were traced from the owner's picture (assets/logo/shiba-styles-front.webp) by
+tools/logo_extract.py and live in logo_shiba.json next to this file: logo height = 1, centre
+(0, 0), Y up. Layers: silhouette (head + bow), mask (the white muzzle), eyes, nose, mouth, tongue,
+bow, knot. On top of the picture, at the owner's request: bigger eyes (EYE_SCALE) and the shiba's
+dot eyebrows (brows, BROW_*).
 
-Стили (оба плоские по слоям — читаются от ~15 мм и годятся для многоцветной печати):
-  logo_relief()  — барельеф: основа по силуэту, бортик по контуру головы, маска выше,
-                   глаза и нос выше маски, пасть утоплена, язык внутри, бабочка с бортиком;
-  logo_outline() — контурный: стенки по границам зон, глаза и нос залиты.
-Плюс logo_svg() — цветная плоская версия для наклеек, render_colors() — цветное превью.
+Styles (both flat by layers: they read from about 15 mm and suit multi-colour printing):
+  logo_relief()  — relief: a base in the silhouette, a rim along the head's outline, the mask
+                   higher, eyes and nose above the mask, the mouth sunk, the tongue inside it,
+                   the bow with a rim;
+  logo_outline() — outline: walls along the borders of the zones, eyes and nose filled.
+Plus logo_svg() — a flat colour version for stickers, render_colors() — a colour preview.
 """
 
 from __future__ import annotations
@@ -27,33 +28,33 @@ import numpy as np
 
 DATA = Path(__file__).with_name("logo_shiba.json")
 SEGMENTS = 32
-SIMPLIFY_MM = 0.04      # точность контуров: всё мельче для сопла 0.4 не существует
-# Умолчания без профиля — сопло 0.4, слой 0.2. С профилем (place_logo(..., p=p)) всё ниже
-# пересчитывается от его сопла и слоя, чтобы при сопле 0.6–0.8 стенки лого остались печатными.
+SIMPLIFY_MM = 0.04      # contour precision: anything finer doesn't exist for a 0.4 nozzle
+# Defaults without a profile: nozzle 0.4, layer 0.2. With a profile (place_logo(..., p=p)) everything
+# below is derived from its nozzle and layer, so the logo's walls stay printable with a 0.6–0.8 nozzle.
 NOZZLE_DEFAULT = 0.4
 LAYER_DEFAULT = 0.2
-MIN_LINE_LINES = 2      # бортики, стенки и отступ от края — не тоньше 2 линий сопла
-BASE_LAYERS = 4         # основа барельефа: 4 слоя
-STEP_LAYERS = 2         # каждый следующий уровень: 2 слоя
-TERRACE_INSET = 0.05    # верхняя терраса уже нижней (см. _terraces)
+MIN_LINE_LINES = 2      # rims, walls and the margin to an edge: no thinner than 2 nozzle lines
+BASE_LAYERS = 4         # the relief's base: 4 layers
+STEP_LAYERS = 2         # each next level: 2 layers
+TERRACE_INSET = 0.05    # an upper terrace is narrower than the one below (see _terraces)
 
-# Глаза и брови — доли высоты лого (на картинке глаза мелкие, по просьбе пользователя крупнее).
-EYE_SCALE = 1.6         # увеличение глаз вокруг их центров
-BROW_DX = 0.004         # бровь чуть наружу от центра глаза
-BROW_DY = 0.072         # бровь над глазом
-BROW_RX = 0.030         # полуоси овала брови
+# Eyes and brows, as shares of the logo height (the picture's eyes are small; the owner asked for bigger).
+EYE_SCALE = 1.6         # eyes scaled around their centres
+BROW_DX = 0.004         # a brow sits slightly outward of the eye's centre
+BROW_DY = 0.072         # a brow above the eye
+BROW_RX = 0.030         # semi-axes of the brow's oval
 BROW_RY = 0.017
-BROW_TILT = 18.0        # наклон брови, градусы: внутренний конец выше
+BROW_TILT = 18.0        # brow tilt, degrees: the inner end higher
 
-COLORS = {   # цвета зон для превью и SVG (как на исходной картинке)
+COLORS = {   # zone colours for the preview and the SVG (as in the source picture)
     "fur": "#d2a46a", "mask": "#f3efe4", "dark": "#3b3530", "tongue": "#e6909a", "bow": "#b8432c",
     "rim": "#b98c55",
 }
 
 
 def logo_available() -> bool:
-    """Есть ли данные лого. Лого — собственность владельца мастерской и в репозиторий не входит:
-    logo_shiba.json и исходная картинка лежат только локально (см. .gitignore и README)."""
+    """Whether the logo data is here. The logo belongs to the workshop's owner and isn't in the
+    repository: logo_shiba.json and the source picture exist only locally (see .gitignore and README)."""
     return DATA.exists()
 
 
@@ -65,20 +66,20 @@ class LogoMissing(FileNotFoundError):
 def _data() -> dict:
     if not DATA.exists():
         raise LogoMissing(
-            f"нет данных лого {DATA.name}: лого не входит в публичный репозиторий. "
-            "Положите assets/logo/shiba-styles-front.webp и запустите tools/logo_extract.py"
+            f"no logo data {DATA.name}: the logo isn't in the public repository. "
+            "Put assets/logo/shiba-styles-front.webp in place and run tools/logo_extract.py"
         )
     return json.loads(DATA.read_text(encoding="utf-8"))
 
 
 def aspect() -> float:
-    """Ширина / высота лого."""
+    """Logo width / height."""
     pts = np.vstack([np.array(loop) for loop in _data()["layers"]["silhouette"]])
     return float(np.ptp(pts[:, 0]) / np.ptp(pts[:, 1]))
 
 
 def _eyes_and_brows() -> tuple[list, list]:
-    """Глаза, увеличенные в EYE_SCALE раз вокруг своих центров, и брови-«точки» над ними."""
+    """Eyes scaled EYE_SCALE times around their centres, and the dot brows above them."""
     eyes, brows = [], []
     for loop in _data()["layers"]["eyes"]:
         p = np.array(loop)
@@ -88,27 +89,27 @@ def _eyes_and_brows() -> tuple[list, list]:
         center = c + [side * BROW_DX, BROW_DY]
         t = np.linspace(0, 2 * np.pi, 40, endpoint=False)
         ell = np.column_stack([BROW_RX * np.cos(t), BROW_RY * np.sin(t)])
-        a = np.radians(-side * BROW_TILT)          # внутренний конец брови выше наружного
+        a = np.radians(-side * BROW_TILT)          # the brow's inner end higher than the outer
         rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
         brows.append((ell @ rot.T + center).tolist())
     return eyes, brows
 
 
 def layers(height: float) -> dict[str, mf.CrossSection]:
-    """Слои лого в мм при высоте height (уши — низ бабочки)."""
+    """The logo's layers in mm at the given height (ears to the bottom of the bow)."""
     raw = dict(_data()["layers"])
     raw["eyes"], raw["brows"] = _eyes_and_brows()
     out = {}
     for name, loops in raw.items():
         scaled = [[(x * height, y * height) for x, y in loop] for loop in loops]
-        # Контуры сняты с точностью ~0.002 высоты: на 20 мм это вершины через 0.03 мм, после
-        # округления в STL они слипаются в вырожденные треугольники. 0.04 мм — в 10 раз точнее сопла.
+        # Contours were traced to about 0.002 of the height: at 20 mm that's a vertex every 0.03 mm,
+        # which STL rounding merges into degenerate triangles. 0.04 mm is still 10× finer than the nozzle.
         out[name] = mf.CrossSection(scaled, mf.FillRule.NonZero).simplify(SIMPLIFY_MM)
     return out
 
 
 def _band(shape: mf.CrossSection, width: float) -> mf.CrossSection:
-    """Полоса шириной width внутри границы фигуры."""
+    """A band of the given width inside the shape's border."""
     return shape - shape.offset(-width, mf.JoinType.Round, 2.0, SEGMENTS)
 
 
@@ -117,18 +118,18 @@ def _extrude(cs: mf.CrossSection, z0: float, z1: float) -> mf.Manifold:
 
 
 def _clean(cs: mf.CrossSection, eps: float = 0.05) -> mf.CrossSection:
-    """Убрать касания в точку и щели тоньше 2·eps: иначе после экспорта сетка не манифолдна."""
+    """Remove point contacts and gaps thinner than 2·eps: otherwise the exported mesh isn't manifold."""
     j = mf.JoinType.Round
     closed = cs.offset(eps, j, 2.0, SEGMENTS).offset(-eps, j, 2.0, SEGMENTS)
     return closed.offset(-eps, j, 2.0, SEGMENTS).offset(eps, j, 2.0, SEGMENTS).simplify(SIMPLIFY_MM / 2)
 
 
 def _terraces(levels: list[tuple[float, mf.CrossSection]]) -> mf.Manifold:
-    """Тело из террас: [(высота верха, область)], каждая область внутри предыдущей."""
+    """A solid of terraces: [(top height, region)], each region inside the previous one."""
     slabs, z0, prev = [], 0.0, None
     for z1, region in levels:
-        # Верхняя терраса на TERRACE_INSET уже нижней: совпадающие стенки соседних террас дают
-        # рёбра нулевой длины и неманифолдную сетку. Ступенька 0.05 мм при печати не видна.
+        # An upper terrace is TERRACE_INSET narrower than the one below: coinciding walls of
+        # neighbouring terraces give zero-length edges and a non-manifold mesh. A 0.05 mm step doesn't show in print.
         inner = None if prev is None else prev.offset(-TERRACE_INSET, mf.JoinType.Miter, 2.0, SEGMENTS)
         region = _clean(region if prev is None else region ^ inner)
         slabs.append(_extrude(region, z0, z1))
@@ -137,18 +138,18 @@ def _terraces(levels: list[tuple[float, mf.CrossSection]]) -> mf.Manifold:
 
 
 def _drop_slivers(m: mf.Manifold, min_volume: float = 1e-3) -> mf.Manifold:
-    """Выбросить осколки нулевого объёма, которые иногда оставляют булевы операции."""
+    """Drop the zero-volume slivers boolean operations sometimes leave."""
     parts = [p for p in m.decompose() if p.volume() > min_volume]
     return mf.Manifold.compose(parts) if len(parts) > 1 else parts[0]
 
 
 def logo_relief(height: float, base: float = 0.8, step: float = 0.4, rim: float | None = None,
                 min_line: float = MIN_LINE_LINES * NOZZLE_DEFAULT) -> mf.Manifold:
-    """Барельеф (стиль 1). Низ на Z = 0, основа base мм, каждый уровень выше на step мм.
+    """Relief (style 1). Bottom at Z = 0, a base of `base` mm, each level `step` mm higher.
 
-    Уровни: основа (рыжая шерсть) → бортик головы, маска, бабочка → глаза, нос, узел, бортик бабочки.
-    Пасть утоплена на step ниже основы, язык — на уровне основы внутри пасти.
-    rim — ширина бортиков; по умолчанию 3% высоты, но не меньше min_line (2 линии сопла).
+    Levels: base (the ginger fur) → head rim, mask, bow → eyes, nose, knot, bow rim.
+    The mouth is sunk one step below the base, the tongue at base level inside it.
+    rim — width of the rims; by default 3% of the height but no less than min_line (2 nozzle lines).
     """
     L = layers(height)
     rim = max(min_line, 0.03 * height) if rim is None else rim
@@ -157,23 +158,23 @@ def logo_relief(height: float, base: float = 0.8, step: float = 0.4, rim: float 
     features = L["eyes"] + L["nose"] + L["brows"]
     bow_rim = _band(L["bow"], rim * 0.8)
     if base - step <= 0:
-        raise ValueError("основа должна быть толще шага: пасть утоплена на step ниже основы")
+        raise ValueError("the base must be thicker than a step: the mouth is sunk one step below the base")
 
     return _terraces([
-        (base - step, L["silhouette"]),                                   # дно пасти
-        (base, L["silhouette"] - mouth_open),                             # основа (шерсть), язык
-        (base + step, (_band(L["silhouette"], rim) - L["bow"])            # бортик головы
-                      + ((L["mask"] ^ head) - L["mouth"])                 # маска без пасти
-                      + L["bow"] + features),                             # бабочка, глаза, нос
-        (base + 2 * step, bow_rim + L["knot"] + features),                # бортик бабочки, узел, глаза, нос
+        (base - step, L["silhouette"]),                                   # bottom of the mouth
+        (base, L["silhouette"] - mouth_open),                             # base (fur), tongue
+        (base + step, (_band(L["silhouette"], rim) - L["bow"])            # head rim
+                      + ((L["mask"] ^ head) - L["mouth"])                 # mask without the mouth
+                      + L["bow"] + features),                             # bow, eyes, nose
+        (base + 2 * step, bow_rim + L["knot"] + features),                # bow rim, knot, eyes, nose
     ])
 
 
 def logo_outline(height: float, wall: float = 1.0, line: float | None = None,
                  min_line: float = MIN_LINE_LINES * NOZZLE_DEFAULT) -> mf.Manifold:
-    """Контурный стиль (2): стенки высотой wall по границам зон, глаза и нос залиты.
+    """Outline style (2): walls `wall` high along the borders of the zones, eyes and nose filled.
 
-    line — толщина стенок; по умолчанию 3% высоты, но не меньше min_line (2 линии сопла).
+    line — wall thickness; by default 3% of the height but no less than min_line (2 nozzle lines).
     """
     L = layers(height)
     line = max(min_line, 0.03 * height) if line is None else line
@@ -187,54 +188,54 @@ def logo_outline(height: float, wall: float = 1.0, line: float | None = None,
     return _drop_slivers(_extrude(_clean(lines), 0, wall))
 
 
-LOGO_EMBED = 0.1        # выпуклое лого утоплено в грань: слияние по объёму
-DEBOSS_GAP = 0.4        # канавка вокруг вдавленного лого при сопле 0.4 (одна линия сопла)
+LOGO_EMBED = 0.1        # a raised logo is sunk into the face a little so the two merge by volume
+DEBOSS_GAP = 0.4        # groove around a sunk logo with a 0.4 nozzle (one nozzle line)
 
 
 def _frame(origin, normal, up) -> np.ndarray:
-    """Матрица 3×4: локальные оси лого (X вправо, Y вверх, Z к зрителю) → мир.
+    """3×4 matrix: the logo's local axes (X right, Y up, Z toward the viewer) → the world.
 
-    normal — наружная нормаль грани (к зрителю), up — куда смотрят уши лого.
+    normal — the face's outward normal (toward the viewer), up — where the logo's ears point.
     """
     n = np.asarray(normal, float)
     n /= np.linalg.norm(n)
     u = np.asarray(up, float)
     u = u - n * (u @ n)
     if np.linalg.norm(u) < 1e-9:
-        raise ValueError("направление «вверх» параллельно нормали грани")
+        raise ValueError("the 'up' direction is parallel to the face normal")
     u /= np.linalg.norm(u)
     x = np.cross(u, n)
     return np.column_stack([x, u, n, np.asarray(origin, float)])
 
 
 def _check_footprint(body: mf.Manifold, footprint: mf.CrossSection, frame: np.ndarray) -> None:
-    """Под всем лого — ровная сплошная грань: выше поверхности пусто, на 0.3 мм ниже — сплошной материал."""
+    """A flat solid face under the whole logo: nothing above the surface, solid material 0.3 mm below."""
     area = footprint.area()
     above = _extrude(footprint, 0.02, 2.0).transform(frame)
     below = _extrude(footprint, -0.3, -0.02).transform(frame)
     over = (body ^ above).volume()
     under = (body ^ below).volume()
     if over > 0.01 * area:
-        raise ValueError("лого не помещается: над гранью в этом месте есть материал (грань не ровная или не наружная)")
-    missing = area - under / 0.28        # мм² площади, под которой нет материала
-    if missing > 0.1:                    # абсолютный допуск: даже малый залёт на отверстие — тонкая стенка
-        raise ValueError(f"лого не помещается: под ним не сплошная грань на {missing:.1f} мм² "
-                         "(край, скругление, отверстие или углубление ближе допустимого отступа)")
+        raise ValueError("the logo doesn't fit: there is material above the face here (the face isn't flat or isn't outer)")
+    missing = area - under / 0.28        # mm² of area with no material below
+    if missing > 0.1:                    # an absolute tolerance: even a small overlap with a hole leaves a thin wall
+        raise ValueError(f"the logo doesn't fit: {missing:.1f} mm² under it isn't solid face "
+                         "(an edge, a rounding, a hole or a recess closer than the margin)")
 
 
 def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: str = "emboss",
                base: float | None = None, step: float | None = None, check: bool = True,
                margin: float | None = None, p=None):
-    """Поставить лого-барельеф на ровную грань детали. Возвращает trimesh (STEP у такой детали не будет).
+    """Put the logo relief on a flat face of a part. Returns a trimesh (such a part has no STEP).
 
-    body   — тело build123d, trimesh или manifold;
-    origin — центр лого на поверхности грани, normal — наружная нормаль, up — куда смотрят уши;
-    mode   — "emboss": барельеф над гранью (высота base + 2·step);
-             "deboss": ниша по силуэту с канавкой в линию сопла, барельеф внутри заподлицо с гранью;
-    p      — профиль принтера: от сопла и слоя зависят умолчания ниже. Без p — как для сопла 0.4;
-    base, step — высота основы и шаг уровней: по умолчанию 4 и 2 слоя (0.8 и 0.4 при слое 0.2);
-    margin — сколько сплошной грани нужно вокруг лого, по умолчанию 2 линии сопла: иначе стенка
-             между лого и краем или отверстием выйдет тоньше, чем принтер может напечатать.
+    body   — a build123d solid, a trimesh or a manifold;
+    origin — the logo's centre on the face, normal — the face's outward normal, up — where the ears point;
+    mode   — "emboss": relief above the face (base + 2·step high);
+             "deboss": a niche in the silhouette with a one-nozzle-line groove, the relief inside flush with the face;
+    p      — printer profile: the defaults below follow its nozzle and layer. Without p, as for a 0.4 nozzle;
+    base, step — base height and level step: by default 4 and 2 layers (0.8 and 0.4 at a 0.2 layer);
+    margin — how much solid face the logo needs around it, by default 2 nozzle lines: otherwise the
+             wall between the logo and an edge or a hole comes out thinner than the printer can print.
     """
     from .mesh import from_manifold, to_manifold
 
@@ -265,7 +266,7 @@ def place_logo(body, origin, normal, up=(0, 0, 1), height: float = 20.0, mode: s
         logo = logo_relief(height, base + LOGO_EMBED, step, min_line=min_line).translate((0, 0, -total - LOGO_EMBED))
         result = (m - pocket.transform(frame)) + logo.transform(frame)
     else:
-        raise ValueError(f"mode: 'emboss' или 'deboss', получено {mode!r}")
+        raise ValueError(f"mode: 'emboss' or 'deboss', got {mode!r}")
     return from_manifold(_drop_slivers(result))
 
 
@@ -278,7 +279,7 @@ def _svg_path(cs: mf.CrossSection, w: float, h: float, pad: float) -> str:
 
 
 def _color_parts(height: float) -> list[tuple[str, mf.CrossSection]]:
-    """Слои в порядке наложения с цветами исходной картинки (для SVG и цветного превью)."""
+    """Layers in stacking order with the source picture's colours (for the SVG and the colour preview)."""
     L = layers(height)
     head = L["silhouette"] - L["bow"]
     return [
@@ -297,7 +298,7 @@ def _color_parts(height: float) -> list[tuple[str, mf.CrossSection]]:
 
 
 def logo_svg(path, height: float = 40.0) -> None:
-    """Цветная плоская версия для наклеек и печати: слои в цветах исходной картинки."""
+    """A flat colour version for stickers and print: layers in the source picture's colours."""
     w = height * aspect()
     pad = 1.0
     parts = _color_parts(height)
@@ -308,7 +309,7 @@ def logo_svg(path, height: float = 40.0) -> None:
 
 
 def render_colors(path, height: float = 40.0) -> None:
-    """Цветное превью плоской версии (как на наклейке или при многоцветной печати)."""
+    """A colour preview of the flat version (as a sticker or a multi-colour print)."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -332,7 +333,7 @@ def render_colors(path, height: float = 40.0) -> None:
 
 
 def render_top(mesh, path, title: str = "", color=(0.80, 0.62, 0.40)) -> None:
-    """Вид сверху одноцветной печати: чем выше поверхность, тем светлее; утопленное — темнее."""
+    """Top view of a single-colour print: the higher the surface, the lighter; sunk parts darker."""
     import matplotlib
 
     matplotlib.use("Agg")

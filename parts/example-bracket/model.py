@@ -1,32 +1,32 @@
-"""example-bracket: Г-образный кронштейн с двумя отверстиями под M4 и скруглением внутреннего угла.
+"""example-bracket: an L-shaped bracket with two M4 holes and a rounded inner corner.
 
-Полка лежит вдоль +X, стойка поднимается по +Z, ширина по Y. Винт полки входит сверху,
-винт стойки — с внутренней стороны (со стороны полки).
+The shelf runs along +X, the post rises along +Z, the width is along Y. The shelf's screw enters
+from above, the post's screw from the inside (the shelf's side).
 
-Сборка: uv run cad.py build parts/example-bracket
+Build: uv run cad.py build parts/example-bracket
 """
 
 from build123d import Axis, Box, Pos, Rot, fillet
 
 from cadlib import fasteners as f
 
-# --- параметры, мм ---
-LEG_X = 40.0            # длина полки по X (от наружной стороны стойки)
-LEG_Z = 40.0            # высота стойки по Z (от низа полки)
-WIDTH = 25.0            # ширина кронштейна по Y
-THICKNESS = 5.0         # толщина полки и стойки
-INNER_FILLET = 6.0      # радиус скругления внутреннего угла: снимает концентрацию напряжений
-OUTER_FILLET = INNER_FILLET + THICKNESS  # наружный угол: с этим радиусом стенка в углу везде одной толщины
-SCREW = "M4"            # крепёж обоих отверстий
-ENTRY_CHAMFER = 0.6     # фаска на входе отверстий (зенковка)
+# --- parameters, mm ---
+LEG_X = 40.0            # shelf length along X (from the post's outer side)
+LEG_Z = 40.0            # post height along Z (from the bottom of the shelf)
+WIDTH = 25.0            # bracket width along Y
+THICKNESS = 5.0         # thickness of the shelf and the post
+INNER_FILLET = 6.0      # inner corner radius: relieves the stress concentration
+OUTER_FILLET = INNER_FILLET + THICKNESS  # outer corner: with this radius the corner wall is the same thickness all round
+SCREW = "M4"            # fastener for both holes
+ENTRY_CHAMFER = 0.6     # chamfer at the holes' entry (countersink)
 
 NAME = "example-bracket"
 EXPECTED_BODIES = 1
-SECTION = ("y", 0.0)    # разрез через оба отверстия
+SECTION = ("y", 0.0)    # a section through both holes
 
 
 def _hole_center(leg: float) -> float:
-    """Середина прямого участка ножки: между концом скругления и краем."""
+    """The middle of a leg's straight part: between the end of the rounding and the edge."""
     start = THICKNESS + INNER_FILLET
     return start + (leg - start) / 2
 
@@ -34,13 +34,13 @@ def _hole_center(leg: float) -> float:
 def _validate(p) -> None:
     hole_d = f.metric(SCREW).clear_fine + p.hole_clearance_mm
     if THICKNESS < p.min_wall_mm:
-        raise ValueError(f"THICKNESS {THICKNESS} меньше минимальной стенки {p.min_wall_mm} для сопла {p.nozzle_mm}")
+        raise ValueError(f"THICKNESS {THICKNESS} is below the minimum wall {p.min_wall_mm} for the {p.nozzle_mm} nozzle")
     for name, leg in (("LEG_X", LEG_X), ("LEG_Z", LEG_Z)):
         straight = leg - THICKNESS - INNER_FILLET
         if straight < hole_d + 2 * p.min_wall_mm:
-            raise ValueError(f"{name} {leg}: прямой участок {straight:.1f} мм мал для отверстия {hole_d:.1f} мм")
+            raise ValueError(f"{name} {leg}: the straight part {straight:.1f} mm is too short for a {hole_d:.1f} mm hole")
     if WIDTH < hole_d + 2 * p.min_wall_mm:
-        raise ValueError(f"WIDTH {WIDTH} мала для отверстия {hole_d:.1f} мм")
+        raise ValueError(f"WIDTH {WIDTH} is too narrow for a {hole_d:.1f} mm hole")
 
 
 def build(p):
@@ -57,6 +57,6 @@ def build(p):
 
     hole_d = f.metric(SCREW).clear_fine + p.hole_clearance_mm
     tool = f.clearance_hole(SCREW, THICKNESS, p) + f.chamfer_ring(hole_d, ENTRY_CHAMFER)
-    body -= Pos(_hole_center(LEG_X), 0, THICKNESS) * tool                  # полка: вход сверху
-    body -= Pos(THICKNESS, 0, _hole_center(LEG_Z)) * Rot(0, 90, 0) * tool  # стойка: вход с внутренней стороны
+    body -= Pos(_hole_center(LEG_X), 0, THICKNESS) * tool                  # shelf: entry from above
+    body -= Pos(THICKNESS, 0, _hole_center(LEG_Z)) * Rot(0, 90, 0) * tool  # post: entry from the inside
     return body

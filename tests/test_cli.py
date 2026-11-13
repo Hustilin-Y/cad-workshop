@@ -1,4 +1,4 @@
-"""Этап 2: CLI build/check/inspect/preview, калибровочный образец, отказ при выходе за стол."""
+"""Stage 2: CLI build/check/inspect/preview, the calibration sample, failing when the part exceeds the bed."""
 
 import hashlib
 from pathlib import Path
@@ -39,8 +39,8 @@ def test_build_fails_when_too_big(tmp_path, capsys):
     )
     assert main(["build", str(folder)]) == 1
     out = capsys.readouterr().out
-    assert "[FAIL] 3. Стол" in out
-    assert "ПРОВАЛЕНА" in out
+    assert "[FAIL] 3. Bed" in out
+    assert "BUILD FAILED" in out
 
 
 def test_build_uses_profile_flags(tmp_path, capsys):
@@ -52,11 +52,11 @@ def test_build_uses_profile_flags(tmp_path, capsys):
         "    return Pos(0, 0, 5) * Box(20, 20, 10) - Pos(0, 0, 5) * Cylinder((3 + p.hole_clearance_mm) / 2, 10)\n",
     )
     assert main(["build", str(folder), "--material", "abs", "--nozzle", "0.6"]) == 0
-    assert "сопло 0.6, ABS" in capsys.readouterr().out
+    assert "nozzle 0.6, ABS" in capsys.readouterr().out
     mesh = trimesh.load(folder / "out" / "hole.stl")
     loops = section_loops(mesh, "z")
     hole = min(loops, key=lambda loop: np.ptp(loop[:, 0]))
-    assert np.ptp(hole[:, 0]) == pytest.approx(3 + 0.2 + 0.1, abs=0.05)  # 3 мм + зазор + поправка ABS
+    assert np.ptp(hole[:, 0]) == pytest.approx(3 + 0.2 + 0.1, abs=0.05)  # 3 mm + clearance + the ABS addition
 
 
 def test_check_and_inspect(tmp_path, capsys):
@@ -64,23 +64,23 @@ def test_check_and_inspect(tmp_path, capsys):
     assert main(["check", str(files["stl"])]) == 0
     assert main(["inspect", str(files["stl"])]) == 0
     out = capsys.readouterr().out
-    assert "40.00 × 30.00 × 20.00 мм" in out
-    assert "24000.0 мм³" in out
+    assert "40.00 × 30.00 × 20.00 mm" in out
+    assert "24000.0 mm³" in out
 
 
 def test_check_warns_on_inches(tmp_path, capsys):
     files = export_all(Pos(0, 0, 0.5) * Box(1.5, 1, 1), tmp_path, "inch", ("stl",))
     assert main(["check", str(files["stl"])]) == 0
-    assert "[WARN] 4. Единицы" in capsys.readouterr().out
+    assert "[WARN] 4. Units" in capsys.readouterr().out
 
 
 def test_check_fails_on_open_mesh(tmp_path, capsys):
     mesh = trimesh.creation.box((20, 20, 20))
-    mesh.update_faces(np.arange(len(mesh.faces) - 2))  # убрать два треугольника — дыра в сетке
+    mesh.update_faces(np.arange(len(mesh.faces) - 2))  # remove two triangles: a hole in the mesh
     path = tmp_path / "open.stl"
     mesh.export(path)
     assert main(["check", str(path)]) == 1
-    assert "[FAIL] 1. Сетка" in capsys.readouterr().out
+    assert "[FAIL] 1. Mesh" in capsys.readouterr().out
 
 
 def test_preview_never_writes_into_source(tmp_path):
@@ -106,4 +106,4 @@ def test_user_errors(tmp_path, capsys):
     assert main(["build", str(tmp_path)]) == 2
     assert main(["build", str(ROOT / "calibration"), "--nozzle", "0.5"]) == 2
     out = capsys.readouterr().out
-    assert "файл не найден" in out and "нет model.py" in out and "Сопло 0.5" in out
+    assert "no such file" in out and "no model.py" in out and "nozzle 0.5" in out

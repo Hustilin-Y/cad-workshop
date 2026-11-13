@@ -1,13 +1,13 @@
 # example-stub
 
-Пример ремикса готового STL: в блоке 60 × 40 × 20 прорезаны сквозное отверстие Ø8 и паз 6 × 20. Источник описан в [SOURCE.md](SOURCE.md). Это сгенерированная заглушка, поэтому, в отличие от чужих моделей, её `source/` хранится в git.
+An example remix of a finished STL: a through hole Ø8 and a slot 6 × 20 cut into a 60 × 40 × 20 block. The source is described in [SOURCE.md](SOURCE.md). It is a generated stub, so unlike other people's models its `source/` is kept in git.
 
-## Что меняем и зачем
+## What changes and why
 
-1. Отверстие Ø8 при X = −15.
-2. Паз 6 × 20 вдоль X при X = 12.
-3. Сборка сверяет изменение объёма с расчётным, допуск ±1%. Хэш оригинала сверяется с записанным в SOURCE.md.
+1. A hole Ø8 at X = −15.
+2. A slot 6 × 20 along X at X = 12.
+3. The build checks the volume change against the calculated one to ±1%, and the original's hash against SOURCE.md.
 
-## История
+## History
 
-- 2026-11-03: создан как эталонный пример (этап 4 ТЗ). Объём −3250.1 мм³ при расчётных −3250.8.
+- 2026-11-03: created as the reference example (stage 4 of the spec). Volume −3250.1 mm³ against the calculated −3250.8.

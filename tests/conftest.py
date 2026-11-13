@@ -1,7 +1,7 @@
-"""Общее для тестов: сборки примеров из репозитория идут в копии во временной папке.
+"""Shared test setup: builds of the repo's examples run on copies in a temporary folder.
 
-Так тесты не пишут в out/ самого проекта, и два прогона одновременно (например, на ПК и
-у ассистента на сервере в одном клоне) не мешают друг другу.
+So the tests never write into the project's own out/, and two runs at once (say on the PC and
+by the assistant on the server in one clone) don't get in each other's way.
 """
 
 import shutil
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture
 def repo_copy(tmp_path):
-    """repo_copy("calibration") → копия папки проекта без out/ во временной папке."""
+    """repo_copy("calibration") → a copy of that project folder, without out/, in a temporary folder."""
 
     def copy(rel: str) -> Path:
         dst = tmp_path / rel

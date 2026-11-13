@@ -1,7 +1,7 @@
 [project]
 name = "cad-workshop"
 version = "0.1.0"
-description = "Параметрические детали и ремиксы под 3D-печать на Bambu Lab P2S"
+description = "Parametric parts and remixes for 3D printing on a Bambu Lab P2S"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,12 +13,12 @@ dependencies = [
     "networkx>=3.7",
     "numpy>=2.5.4",
     "pillow>=11.0",       # tools/logo_extract.py
-    "scipy>=1.14",        # проверки: выпуклая оболочка основания, связность площадок
+    "scipy>=1.14",        # checks: the base's convex hull, plateau connectivity
     "trimesh>=5.2.0",
 ]
 
 [dependency-groups]
-viewer = [  # живой 3D-просмотр, только на ПК: uv run --group viewer python -m ocp_viewer
+viewer = [  # live 3D view, PC only: uv run --group viewer python -m ocp_viewer
     "ocp-viewer>=1.2.0",
     "ocp-vscode>=4.2.0",
 ]
@@ -27,7 +27,7 @@ dev = [
 ]
 
 [tool.uv]
-link-mode = "copy"   # кэш uv и проект на разных дисках, hardlink невозможен
+link-mode = "copy"   # the uv cache and the project are on different drives, hardlinks are impossible
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

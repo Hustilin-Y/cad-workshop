@@ -1,5 +1,5 @@
-"""Найдено ревью: STEP с кривизной, единицы 3MF, кодировка вывода, ошибки модели, крайние случаи
-проверки 7, надписи без системного шрифта, память на больших сетках."""
+"""Found in review: STEP with curvature, 3MF units, output encoding, model errors, edge cases
+of check 7, lettering without a system font, memory on big meshes."""
 
 import os
 import subprocess
@@ -25,7 +25,7 @@ from cadlib.text import font_path, label
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# --- STEP со скруглениями -----------------------------------------------------
+# --- STEP with roundings ------------------------------------------------------
 
 
 @pytest.mark.parametrize("shape", ["rounded", "sphere"])
@@ -37,10 +37,10 @@ def test_check_step_with_curvature(tmp_path, capsys, shape):
     assert loaded.is_watertight and len(loaded.split(only_watertight=False)) == 1
     assert main(["check", str(step)]) == 0
     out = capsys.readouterr().out
-    assert "FAIL" not in out and "отдельных тел: 1" in out
+    assert "FAIL" not in out and "separate bodies: 1" in out
 
 
-# --- единицы 3MF --------------------------------------------------------------
+# --- 3MF units ----------------------------------------------------------------
 
 
 def test_3mf_in_inches_is_converted_to_mm(tmp_path):
@@ -56,7 +56,7 @@ def test_3mf_in_inches_is_converted_to_mm(tmp_path):
 
 
 def test_3mf_written_in_chunks_round_trips(tmp_path, monkeypatch):
-    monkeypatch.setattr(export, "_3MF_CHUNK_ROWS", 7)  # кусков много, швы между ними проверяются
+    monkeypatch.setattr(export, "_3MF_CHUNK_ROWS", 7)  # many chunks, so the seams between them are tested
     sphere = trimesh.creation.icosphere(subdivisions=2, radius=10)
     path = tmp_path / "s.3mf"
     write_3mf(sphere, path, "s")
@@ -65,7 +65,7 @@ def test_3mf_written_in_chunks_round_trips(tmp_path, monkeypatch):
     assert back.volume == pytest.approx(sphere.volume, rel=1e-4)
 
 
-# --- вывод и ошибки CLI -------------------------------------------------------
+# --- CLI output and errors ----------------------------------------------------
 
 
 def test_report_is_utf8_when_piped(tmp_path):
@@ -75,27 +75,27 @@ def test_report_is_utf8_when_piped(tmp_path):
     out = subprocess.run(
         [sys.executable, str(ROOT / "cad.py"), "check", str(stl)], capture_output=True, env=env, check=True
     ).stdout
-    assert "Сетка" in out.decode("utf-8")
+    assert "1. Mesh" in out.decode("utf-8") and "mm³" in out.decode("utf-8")
 
 
 def test_validate_error_is_a_message_not_a_traceback(tmp_path, capsys):
     folder = tmp_path / "thin"
     folder.mkdir()
     (folder / "model.py").write_text(
-        "def build(p):\n    raise ValueError('стенка 0.3 мм тоньше минимума 0.8 мм')\n", encoding="utf-8"
+        "def build(p):\n    raise ValueError('wall 0.3 mm is below the 0.8 mm minimum')\n", encoding="utf-8"
     )
     assert main(["build", str(folder)]) == 2
     out = capsys.readouterr().out
-    assert "модель не собралась: стенка 0.3 мм" in out and "Traceback" not in out
+    assert "the model did not build: wall 0.3 mm" in out and "Traceback" not in out
 
 
 def test_subtract_everything_explains_itself():
     block = trimesh.creation.box((10, 10, 10))
-    with pytest.raises(ValueError, match="не осталось ни одного треугольника"):
+    with pytest.raises(ValueError, match="nothing is left after the operation"):
         m.subtract(block, trimesh.creation.box((20, 20, 20)))
 
 
-# --- проверка 7 ---------------------------------------------------------------
+# --- check 7 ------------------------------------------------------------------
 
 
 def _levels(report: Report) -> dict[str, str]:
@@ -109,18 +109,18 @@ def test_pure_move_is_not_reported_as_no_change():
     report = Report()
     compare_to_original(original, moved, report, expected_delta_mm3=0)
     levels = _levels(report)
-    assert "7. Правка" not in levels
-    assert levels["7. Ожидаемое изменение"] == "ok"
+    assert "7. Edit" not in levels
+    assert levels["7. Expected change"] == "ok"
 
 
 def test_zero_expected_delta_still_catches_real_change():
     original = trimesh.creation.box((10, 10, 10))
     report = Report()
     compare_to_original(original, trimesh.creation.box((10, 10, 9)), report, expected_delta_mm3=0)
-    assert _levels(report)["7. Ожидаемое изменение"] == "warn"
+    assert _levels(report)["7. Expected change"] == "warn"
 
 
-# --- надписи ------------------------------------------------------------------
+# --- lettering ----------------------------------------------------------------
 
 
 def test_label_uses_packaged_font_and_is_watertight():
@@ -131,16 +131,16 @@ def test_label_uses_packaged_font_and_is_watertight():
     assert check_mesh(mesh, load_profile(), 1).failed is False
 
 
-# --- превью большой сетки -----------------------------------------------------
+# --- preview of a big mesh ---------------------------------------------------
 
 
 def test_preview_draws_a_simplified_copy_of_a_big_mesh(tmp_path, monkeypatch):
     monkeypatch.setattr(preview, "PREVIEW_MAX_FACES", 500)
-    sphere = trimesh.creation.icosphere(subdivisions=4, radius=10)  # 5120 треугольников
+    sphere = trimesh.creation.icosphere(subdivisions=4, radius=10)  # 5120 triangles
     drawn = []
     real = preview._draw_view
     monkeypatch.setattr(preview, "_draw_view", lambda ax, mesh, *a: drawn.append(len(mesh.faces)) or real(ax, mesh, *a))
     png = preview.render_preview(sphere, tmp_path / "s.png", "s", section="z")
     assert png.stat().st_size > 0
     assert drawn and max(drawn) <= 600
-    assert len(sphere.faces) == 5120  # исходная сетка не тронута
+    assert len(sphere.faces) == 5120  # the original mesh is untouched

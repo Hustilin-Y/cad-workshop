@@ -1,4 +1,4 @@
-"""Этап 1: куб 20 мм собирается, проверки проходят, PNG создан."""
+"""Stage 1: a 20 mm cube builds, the checks pass, the PNG is made."""
 
 from build123d import Box, Pos
 
@@ -27,7 +27,7 @@ def test_cube_20mm(tmp_path):
 
 
 def test_3mf_is_plain_core(tmp_path):
-    """3MF без production-расширения: иначе Bambu Studio пишет «invalid config»."""
+    """3MF without the production extension: otherwise Bambu Studio says "invalid config"."""
     import zipfile
 
     files = export_all(Pos(0, 0, 10) * Box(20, 20, 20), tmp_path, "cube", ("3mf",))

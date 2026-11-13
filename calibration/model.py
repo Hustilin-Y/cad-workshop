@@ -1,45 +1,45 @@
-"""Калибровка допусков: ряд отверстий D+c и штырей D−c, плюс ключ с точным D.
+"""Tolerance calibration: a row of D+c holes and D−c pins, plus a key with an exact D.
 
-Ключом пробуют каждое отверстие (его штырь) и каждый штырь (его кольцо).
-Значение c, при котором посадка нужного типа, переносится в printer.toml.
+The key tries every hole (with its pin) and every pin (with its ring).
+The value of c giving the wanted kind of fit goes into printer.toml.
 """
 
 from build123d import Box, Cylinder, Pos, extrude
 
 from cadlib.text import label
 
-# --- параметры, мм ---
-NOMINAL_D = 8.0                                     # номинальный диаметр штыря/отверстия ключа
-CLEARANCES = [round(i * 0.05, 2) for i in range(11)]  # 0.00 … 0.50 с шагом 0.05, зазор на диаметр
-PITCH = 13.0                                        # шаг между отверстиями по X
-MARGIN_X = 9.0                                      # от края пластины до центра первого отверстия
-PLATE_DEPTH = 36.0                                  # пластина по Y
-PLATE_T = 3.0                                       # толщина пластины = глубина отверстий
-PIN_ROW_Y = 8.0                                     # ряд штырей
-LABEL_ROW_Y = 18.0                                  # ряд подписей
-HOLE_ROW_Y = 28.0                                   # ряд отверстий
-PIN_H = 8.0                                         # высота штырей над пластиной
-LABEL_SIZE = 4.0                                    # высота шрифта подписей
-LABEL_RELIEF = 0.6                                  # высота рельефа подписей (3 слоя по 0.2)
-KEY_GAP = 8.0                                       # зазор между пластиной и ключом на столе
-KEY_RING_WALL = 3.0                                 # стенка кольца ключа
-KEY_BAR_W = 10.0                                    # ширина перемычки ключа
-KEY_LEN = 50.0                                      # расстояние между центрами кольца и штыря ключа
+# --- parameters, mm ---
+NOMINAL_D = 8.0                                     # nominal diameter of the key's pin/hole
+CLEARANCES = [round(i * 0.05, 2) for i in range(11)]  # 0.00 … 0.50 in steps of 0.05, clearance on the diameter
+PITCH = 13.0                                        # pitch between holes along X
+MARGIN_X = 9.0                                      # from the plate's edge to the first hole's centre
+PLATE_DEPTH = 36.0                                  # plate along Y
+PLATE_T = 3.0                                       # plate thickness = hole depth
+PIN_ROW_Y = 8.0                                     # row of pins
+LABEL_ROW_Y = 18.0                                  # row of labels
+HOLE_ROW_Y = 28.0                                   # row of holes
+PIN_H = 8.0                                         # pin height above the plate
+LABEL_SIZE = 4.0                                    # label font height
+LABEL_RELIEF = 0.6                                  # label relief height (3 layers of 0.2)
+KEY_GAP = 8.0                                       # gap between the plate and the key on the bed
+KEY_RING_WALL = 3.0                                 # wall of the key's ring
+KEY_BAR_W = 10.0                                    # width of the key's bar
+KEY_LEN = 50.0                                      # distance between the key's ring and pin centres
 
 NAME = "tolerance-gauge"
-EXPECTED_BODIES = 2                                 # пластина + ключ
-SECTION = ("y", HOLE_ROW_Y)                         # разрез через ряд отверстий в превью
+EXPECTED_BODIES = 2                                 # plate + key
+SECTION = ("y", HOLE_ROW_Y)                         # a section through the row of holes in the preview
 
 
 def _label(c: float) -> str:
-    return f"{c:.2f}".lstrip("0")                   # ".05", ".50"; ноль как ".00"
+    return f"{c:.2f}".lstrip("0")                   # ".05", ".50"; zero as ".00"
 
 
 def plate():
     length = 2 * MARGIN_X + PITCH * (len(CLEARANCES) - 1)
     xs = [MARGIN_X + i * PITCH for i in range(len(CLEARANCES))]
     body = Pos(length / 2, PLATE_DEPTH / 2, PLATE_T / 2) * Box(length, PLATE_DEPTH, PLATE_T)
-    # Булевы операции списком, а не по одной: OCCT делает их за один проход, в разы быстрее.
+    # Booleans as a list, not one by one: OCCT does them in one pass, several times faster.
     body -= [Pos(x, HOLE_ROW_Y, PLATE_T / 2) * Cylinder((NOMINAL_D + c) / 2, PLATE_T) for x, c in zip(xs, CLEARANCES)]
     pins = [Pos(x, PIN_ROW_Y, PLATE_T + PIN_H / 2) * Cylinder((NOMINAL_D - c) / 2, PIN_H) for x, c in zip(xs, CLEARANCES)]
     labels = [
@@ -50,7 +50,7 @@ def plate():
 
 
 def key():
-    """Кольцо с отверстием ровно D и штырь ровно D на одной перемычке."""
+    """A ring with a hole of exactly D and a pin of exactly D on one bar."""
     ring_r = NOMINAL_D / 2 + KEY_RING_WALL
     y = -KEY_GAP - ring_r
     x0 = MARGIN_X
@@ -66,5 +66,5 @@ def key():
 
 
 def build(p):
-    # Профиль не влияет на геометрию: образец как раз измеряет допуски, а не использует их.
+    # The profile doesn't affect the geometry: the sample measures tolerances, it doesn't use them.
     return plate() + key()

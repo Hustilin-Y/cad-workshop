@@ -1,4 +1,4 @@
-"""Этап 3: тела под крепёж имеют правильные размеры и учитывают профиль."""
+"""Stage 3: fastener tools have the right sizes and follow the profile."""
 
 import math
 
@@ -15,7 +15,7 @@ P = load_profile()
 
 
 def _hole_diameters(part, z):
-    """Диаметры (по X) всех контуров сечения тела плоскостью Z=z."""
+    """Diameters (along X) of every contour of the body's section by the plane Z=z."""
     loops = section_loops(shape_to_mesh(part), "z", z)
     return sorted(round(float(np.ptp(loop[:, 0])), 2) for loop in loops)
 
@@ -42,7 +42,7 @@ def test_countersunk_is_90_degrees():
     m = f.METRIC["M3"]
     head = m.csk_d + P.hole_clearance_mm
     body = _block_minus(f.countersunk_hole("M3", 10, P))
-    # На глубине 0.5 мм конус 90° уже на 1 мм (2 × 0.5) уже головки.
+    # At 0.5 mm deep a 90° cone is already 1 mm (2 × 0.5) narrower than the head.
     assert _hole_diameters(body, 9.5)[0] == pytest.approx(head - 1.0, abs=0.08)
 
 
@@ -52,8 +52,8 @@ def test_nut_pocket_across_flats_and_slot():
     body = _block_minus(f.nut_pocket("M3", P))
     loops = section_loops(shape_to_mesh(body), "z", 9)
     hexagon = min(loops, key=lambda loop: np.ptp(loop[:, 0]))
-    assert np.ptp(hexagon[:, 1]) == pytest.approx(s, abs=0.05)                 # под ключ — по Y
-    assert np.ptp(hexagon[:, 0]) == pytest.approx(2 * s / math.sqrt(3), abs=0.05)  # по углам — по X
+    assert np.ptp(hexagon[:, 1]) == pytest.approx(s, abs=0.05)                 # across flats: along Y
+    assert np.ptp(hexagon[:, 0]) == pytest.approx(2 * s / math.sqrt(3), abs=0.05)  # across corners: along X
 
     slotted = _block_minus(f.nut_pocket("M3", P, slot=20))
     assert slotted.volume < body.volume
@@ -62,7 +62,7 @@ def test_nut_pocket_across_flats_and_slot():
 def test_insert_hole_depth_and_override():
     tool = f.insert_hole("M3", P, hole_d=4.2, length=5.0)
     lo = tool.bounding_box().min
-    assert lo.Z == pytest.approx(-6.0, abs=0.02)          # длина + 1 мм запаса
+    assert lo.Z == pytest.approx(-6.0, abs=0.02)          # length + 1 mm spare
     body = _block_minus(tool)
     assert _hole_diameters(body, 6)[0] == pytest.approx(4.2, abs=0.05)
 
@@ -70,7 +70,7 @@ def test_insert_hole_depth_and_override():
 def test_wood_screw_countersink():
     body = _block_minus(f.wood_screw_countersunk_hole(6.0, 10, P))
     assert _hole_diameters(body, 5)[0] == pytest.approx(6.0 + f.WOOD_SCREW_CLEARANCE + P.hole_clearance_mm, abs=0.05)
-    # На глубине 1 мм конус 90° на 2 мм уже головки Ø12 (+ зазор).
+    # At 1 mm deep a 90° cone is 2 mm narrower than the Ø12 head (+ clearance).
     assert _hole_diameters(body, 9)[0] == pytest.approx(12.0 + P.hole_clearance_mm - 2.0, abs=0.08)
     with pytest.raises(ValueError, match="head_d"):
         f.wood_screw_countersunk_hole(7.0, 10, P)

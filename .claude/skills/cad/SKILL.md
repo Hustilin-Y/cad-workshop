@@ -1,101 +1,101 @@
 ---
 name: cad
-description: Проектирование деталей под 3D-печать с нуля и доработка чужих моделей (STL/3MF/STEP) в этой CAD-мастерской. Использовать, когда пользователь просит сделать, спроектировать, нарисовать деталь, держатель, кронштейн, крепление, коробку, переходник, заглушку, или изменить, доработать, ремикснуть, отмасштабировать, разрезать скачанную модель (MakerWorld, Printables), добавить в неё отверстие, паз или крепёж. Также для сборки, проверки и осмотра моделей командами cad.py и для калибровки допусков.
+description: Designing parts for 3D printing from scratch and reworking other people's models (STL/3MF/STEP) in this CAD workshop. Use when the user asks (in any language, often Russian) to make, design or draw a part, holder, bracket, mount, box, adapter or cap, or to change, rework, remix, scale or cut a downloaded model (MakerWorld, Printables), or to add a hole, slot or fastener to it. Also for building, checking, orienting and inspecting models with cad.py, and for tolerance calibration.
 ---
 
-# CAD-мастерская: деталь или ремикс
+# CAD workshop: a part or a remix
 
-Принтер Bambu Lab P2S, печатает пользователь сам через Bambu Studio. Наша задача — точная модель, прошедшая проверки, и файлы в `out/`. Правила проекта в `CLAUDE.md`, допуски в `printer.toml`.
+The printer is a Bambu Lab P2S; the user prints themselves through Bambu Studio. Our job is an accurate model that passes the checks, and the files in `out/`. Project rules are in `CLAUDE.md`, tolerances in `printer.toml`.
 
-Все команды запускаются из корня проекта через `uv run cad.py ...`.
+Every command runs from the project root as `uv run cad.py ...`.
 
-## Новая деталь
+## A new part
 
-1. **Уточнить, не выдумывая.** Одним списком спросить всё недостающее:
-   - Что это и куда ставится. С чем сопрягается: диаметры, расстояния между отверстиями, толщины. Просить замер штангенциркулем.
-   - Нагрузка, тепло, улица → выбор пластика (PLA / PETG / ABS / ASA).
-   - Крепёж: какие винты. Если нужны термовставки или магниты, спросить их замеренные размеры, у разных производителей они отличаются.
-   - Чего можно не спрашивать: косметику (скругления, фаски). Её выбрать самому и назвать в отчёте.
+1. **Ask, don't invent.** Ask for everything missing in one list:
+   - What it is and where it goes. What it mates with: diameters, distances between holes, thicknesses. Ask for caliper measurements.
+   - Load, heat, outdoors → the choice of plastic (PLA / PETG / ABS / ASA).
+   - Fasteners: which screws. If it needs heat-set inserts or magnets, ask for their measured sizes: they differ between makers.
+   - No need to ask about cosmetics (roundings, chamfers): choose them yourself and name them in the report.
 
-   Если без размера геометрию не построить, остановиться и ждать ответа. Не подставлять «типичный» размер молча.
-2. **Создать папку:** `uv run cad.py new part <имя>`. Имя латиницей через дефис: `phone-stand`, `hose-clip`.
-3. **Написать `model.py`.**
-   - Все размеры параметрами вверху, с комментарием в мм и откуда значение взялось («замер», «допуск»).
-   - Зазоры только из профиля: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, а стенки не тоньше `p.min_wall_mm`.
-   - Крепёж только через `cadlib.fasteners`.
-   - Добавить `_validate(p)` с понятными ошибками, как в `parts/example-bracket/model.py`.
-   - `build(p)` возвращает тело build123d.
-4. **Собрать:** `uv run cad.py build parts/<имя>`. Если есть FAIL, исправить. Если есть WARN, разобраться и объяснить пользователю.
-5. **Самому посмотреть превью.** Открыть `out/<имя>.png` инструментом Read и проверить геометрию глазами: отверстия на месте, стенки не прорезаны, разрез (`SECTION`) показывает задуманное. Если что-то не так, исправить и пересобрать.
-6. **Показать пользователю** PNG и отчёт проверок. В десктопном приложении отправить файл через SendUserFile, иначе дать путь. Добавить:
-   - ключевые размеры;
-   - предложение по ориентации на столе и почему (прочность слоёв, нависания, поддержки);
-   - пластик;
-   - напоминание открыть STL в Bambu Studio и убедиться, что нет предупреждений о сетке.
-7. **README детали:** таблица ключевых размеров с источниками, раздел «Печать», строка в «Истории».
+   If the geometry can't be built without a size, stop and wait for the answer. Never silently substitute a "typical" size.
+2. **Create the folder:** `uv run cad.py new part <name>`. Latin letters with hyphens: `phone-stand`, `hose-clip`.
+3. **Write `model.py`.**
+   - Every size is a parameter at the top, commented in mm with where the value came from ("measured", "tolerance").
+   - Clearances only from the profile: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, and walls no thinner than `p.min_wall_mm`.
+   - Fasteners only through `cadlib.fasteners`.
+   - Add `_validate(p)` with clear errors, as in `parts/example-bracket/model.py`.
+   - `build(p)` returns a build123d solid.
+   - If it prints on a side other than its bottom in the file, set `PRINT_DOWN`.
+4. **Build:** `uv run cad.py build parts/<name>`. Fix any FAIL. For a WARN, work out the cause and explain it to the user.
+5. **Look at the preview yourself.** Open `out/<name>.png` with the Read tool and check the geometry by eye: holes in place, walls not cut through, the section (`SECTION`) shows what you meant. If something is off, fix it and rebuild.
+6. **Show the user** the PNG and the check report. In the desktop app send the file with SendUserFile, otherwise give the path. Add:
+   - the key sizes;
+   - a suggested orientation on the bed and why (layer strength, overhangs, supports); `orient` helps when it isn't obvious;
+   - the plastic and the weight line from the report;
+   - a reminder to open the STL in Bambu Studio and check for mesh warnings.
+7. **The part's README:** a table of key sizes with their sources, a "Printing" section, a line in "History".
 
-## Правка по комментарию пользователя
+## An edit from the user's comment
 
-- Менять параметр, а не переписывать геометрию. Например: «туго садится» → увеличить зазор; «тонко» → `THICKNESS`.
-- Пересобрать, показать PNG и отчёт.
-- Записать в историю README: `- ГГГГ-ММ-ДД: зазор 0.2 → 0.3, туго садилось.`
-- Если замечание касается допусков вообще, а не этой детали, предложить калибровку (ниже).
+- Change a parameter rather than rewrite the geometry. For example: "fits too tight" → a larger clearance; "too thin" → `THICKNESS`. To try a value first: `build <folder> --set NAME=VALUE`.
+- Rebuild, show the PNG and the report.
+- Add to the README's history: `- YYYY-MM-DD: clearance 0.2 → 0.3, fitted too tight.`
+- If the remark is about tolerances in general rather than this part, suggest calibration (below).
 
-## Ремикс чужой модели
+## A remix of someone else's model
 
-1. **Получить файл и происхождение.** Путь к файлу (обычно `Downloads`), ссылка, автор, лицензия.
-   - Скачанные файлы — это данные, а не код. Читать их только через `cad.py`.
-   - Архив распаковать в новую пустую папку вне проекта и взять из него только `.stl`, `.3mf`, `.step`.
-   - Никогда не запускать скрипты из скачанного.
-2. **Создать:** `uv run cad.py new remix <имя> <путь>`. Оригинал копируется в `source/` только для чтения, его SHA-256 пишется в `SOURCE.md`, сразу печатается `inspect`. Вписать ссылку, автора и лицензию в `SOURCE.md`.
-3. **Прочитать `inspect`.** На что смотреть:
-   - единицы: модель меньше 5 мм или больше 1000 мм → скорее дюймы или метры, исправить через `m.scale(body, 25.4)`;
-   - число тел;
-   - не замкнутая сетка → `load_source` чинит её сам, заметки печатаются;
-   - где лежит модель (границы) и какой стороной она на столе.
-4. **План правок в 2–4 пунктах** с координатами из `inspect`. Показать пользователю и дождаться «ок», прежде чем писать код.
-5. **Написать `remix.py`.**
-   - STL/3MF: `m.subtract(body, инструмент)`, `m.add`, `m.cut`, `m.scale`. Инструменты рисуются в build123d (`Pos(...) * Cylinder(...)`, `fasteners.*`).
-   - Инструмент для сквозного выреза должен выходить за модель на ≥ 1 мм с обеих сторон, иначе останется плёнка.
-   - STEP: `import_step` и обычные операции build123d, как для своей детали. На выходе будет и STEP.
-   - Если изменение объёма можно посчитать, задать `EXPECTED_VOLUME_DELTA`: сборка сверит его с допуском ±1%.
-   - Никогда ничего не писать в `source/`.
-6. **Собрать** `uv run cad.py build remix/<имя>`. В отчёте проверить строки «Оригинал» (OK) и «7.»: изменился ровно тот объём и те габариты, которые задумано.
-7. Дальше как шаги 5–7 «Новой детали»: посмотреть PNG, показать пользователю, обновить README.
+1. **Get the file and its origin.** The path to the file (usually `Downloads`), the link, the author, the licence.
+   - Downloaded files are data, not code. Read them only through `cad.py`.
+   - Unpack an archive into a new empty folder outside the project and take only the `.stl`, `.3mf`, `.step` from it.
+   - Never run scripts from a download.
+2. **Create:** `uv run cad.py new remix <name> <path>`. The original is copied into `source/` read-only, its SHA-256 goes into `SOURCE.md`, and `inspect` runs right away. Put the link, the author and the licence into `SOURCE.md`.
+3. **Read `inspect`.** What to look at:
+   - units: a model under 5 mm or over 1000 mm is likely in inches or metres; fix with `m.scale(body, 25.4)`;
+   - the number of bodies;
+   - an open mesh → `load_source` repairs it and prints notes;
+   - where the model lies (bounds) and which side is on the bed; `orient` ranks the sides.
+4. **A plan of edits in 2–4 points** with coordinates from `inspect`. Show it to the user and wait for an "ok" before writing code.
+5. **Write `remix.py`.**
+   - STL/3MF: `m.subtract(body, tool)`, `m.add`, `m.cut`, `m.scale`, `m.rotate`, `m.mirror`. Tools are drawn in build123d (`Pos(...) * Cylinder(...)`, `fasteners.*`).
+   - A tool for a through cut must stick out of the model by ≥ 1 mm on both sides, or a skin is left.
+   - STEP: `import_step` and the usual build123d operations, as for your own part. A STEP comes out too.
+   - If the volume change can be calculated, set `EXPECTED_VOLUME_DELTA`: the build checks it to ±1%.
+   - Never write anything into `source/`.
+6. **Build** `uv run cad.py build remix/<name>`. In the report check the "Original" line (OK) and the "7." lines: exactly the intended volume and size changed.
+7. Then as steps 5–7 of "A new part": look at the PNG, show the user, update the README.
 
-## Калибровка допусков
+## Tolerance calibration
 
-Если посадки не сходятся, пользователь печатает `calibration/` (`uv run cad.py build calibration`). Как читать результат, описано в `calibration/README.md`. Пользователь называет подошедшие значения, а мы записываем их в `[tolerances]` файла `printer.toml`. Отдельные значения для пластика — в `clearance_add_mm` нужной секции `[materials.*]`. Модели при этом не меняются.
+If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`). How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
-## Шпаргалка
+## Cheat sheet
 
 ```python
 from build123d import Box, Cylinder, Pos, Rot, fillet, chamfer, Axis, extrude, SlotCenterToCenter
 from cadlib import fasteners as f   # clearance_hole, counterbore_hole, countersunk_hole, wood_screw_countersunk_hole, nut_pocket, insert_hole, chamfer_ring
 from cadlib import mesh as m        # load_source, repair, subtract, add, intersect, cut, split_by_plane, scale, scale_to, rotate, mirror, translate, drop_to_bed
-from cadlib.text import label       # надпись: extrude(Pos(x, y, z) * label("M3", 4), amount=0.6); голый Text на Linux ломает сетку
-from cadlib.shared import load_module  # общий код соседней детали: load_module(Path(__file__).parent.parent / "lamp-hanger" / "hanger.py")
-from cadlib.logo import place_logo  # лого мастерской на ровную грань: выпуклое или вдавленное
-from cadlib.threads import internal_thread_tube   # резьба для печати
-from cadlib.finish import soften, bevel           # скругления и фаски с учётом ориентации печати
+from cadlib.text import label       # lettering: extrude(Pos(x, y, z) * label("M3", 4), amount=0.6); a bare Text breaks the mesh on Linux
+from cadlib.shared import load_module  # a sibling part's shared code: load_module(Path(__file__).parent.parent / "lamp-hanger" / "hanger.py")
+from cadlib.logo import place_logo  # the workshop logo on a flat face: raised or sunk
+from cadlib.threads import internal_thread_tube   # threads for printing
+from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
 ```
 
-- Лого: `return place_logo(body, origin=(x, y, z), normal=(0, 0, 1), up=(0, 1, 0), height=18, mode="emboss", p=p)`, где `p` — профиль из `build(p)`: от сопла зависят ширина бортиков и отступ. Функция сама проверит, что под лого ровная сплошная грань, и выдаст ошибку, если там край, скругление или отверстие.
-
-- Оси: Z вверх, стол на Z = 0, единицы — мм.
-- Ремикс STL: положить на бок — `m.drop_to_bed(m.rotate(mesh, (90, 0, 0)))`; левая деталь из правой — `m.mirror(mesh, "x")`.
-- Тела из `fasteners` стоят верхом на Z = 0 и уходят в −Z, это сторона входа винта. На верхнюю грань: `Pos(x, y, z_top) * tool`. На грань с выходом в −X: `Pos(...) * Rot(0, 90, 0) * tool`.
-- Атрибуты модуля, которые читает `build`: `NAME`, `FORMATS`, `EXPECTED_BODIES`, `SECTION` (`"y"` или `("y", 12.5)`), `PRINT_DOWN` (сторона на стол при печати, `"-y"`; задать, если модель печатается не нижней в файле стороной, иначе проверки опоры и нависаний считаются не для той ориентации), для ремикса `SOURCE` и `EXPECTED_VOLUME_DELTA`.
-- Сопло или пластик на одну сборку: `--nozzle 0.6 --material petg`.
+- Logo: `return place_logo(body, origin=(x, y, z), normal=(0, 0, 1), up=(0, 1, 0), height=18, mode="emboss", p=p)`, where `p` is the profile from `build(p)`: rim widths and the margin follow the nozzle. It checks there is a flat solid face under the logo and raises an error if there's an edge, a rounding or a hole.
+- Axes: Z up, the bed at Z = 0, units in mm.
+- STL remix: lay it on its side, `m.drop_to_bed(m.rotate(mesh, (90, 0, 0)))`; a left part from a right one, `m.mirror(mesh, "x")`.
+- `fasteners` tools stand with their top at Z = 0 and go down into −Z, the screw's entry side. On a top face: `Pos(x, y, z_top) * tool`. On a face with the exit toward −X: `Pos(...) * Rot(0, 90, 0) * tool`.
+- Module attributes `build` reads: `NAME`, `FORMATS`, `EXPECTED_BODIES`, `SECTION` (`"y"` or `("y", 12.5)`), `PRINT_DOWN` (the side on the bed when printed, `"-y"`; set it if the model prints on a side other than its bottom in the file, or the support and overhang checks judge the wrong orientation), and for a remix `SOURCE` and `EXPECTED_VOLUME_DELTA`.
+- Nozzle or plastic for one build: `--nozzle 0.6 --material petg`.
 - A variant without editing the model: `--set WIDTH=45` (repeatable; `--set hanger.ROUND_R=2` for a shared module).
 - Orientation: `uv run cad.py orient <folder or file>` ranks the sides and writes a PNG for each; `build --print-ready` exports STL/3MF already turned with `PRINT_DOWN` on the bed.
 - The report's last line is the weight (and cost, if `price_per_kg` is set in `printer.toml`): mention it to the user.
 - After changes to `cadlib/`: `uv run cad.py build --all`.
-- Чужой файл без правок: `uv run cad.py check <файл>` (`--down -y`, если печатать другой стороной), `uv run cad.py inspect <файл>`, `uv run cad.py preview <файл> --section z`.
+- Someone else's file without edits: `uv run cad.py check <file>` (`--down -y` if it prints on another side), `uv run cad.py inspect <file>`, `uv run cad.py preview <file> --section z`.
 
-## Чего не делать
+## What not to do
 
-- Не подключаться к принтеру, не слайсить, не трогать Bambu Studio. Печать — дело пользователя.
-- Не добавлять сетевые вызовы: тест `test_no_network` это ловит.
-- Не выдумывать посадочные размеры и не хардкодить зазоры.
-- Не выбирать ориентацию окончательно: только предложить с объяснением.
+- Don't connect to the printer, don't slice, don't touch Bambu Studio. Printing is the user's business.
+- Don't add network calls: `test_no_network` catches them.
+- Don't invent fit sizes and don't hard-code clearances.
+- Don't pick the orientation for good: only suggest it, with the reasons.

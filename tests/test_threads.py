@@ -1,4 +1,4 @@
-"""Резьба cadlib.threads: витки сливаются в одно тело, профиль и объём правильные."""
+"""cadlib.threads: the turns merge into one body, the profile and volume are right."""
 
 import math
 
@@ -17,7 +17,7 @@ def test_internal_thread_tube_is_one_solid_with_ridges(major_d, pitch, length):
     outer = major_d + 10
     tube = internal_thread_tube(outer, major_d, pitch, length)
     plain = math.pi * ((outer / 2) ** 2 - (major_d / 2) ** 2) * length
-    # Витки занимают примерно (7P/8 + P/4)/2 · h на шаг по окружности среднего радиуса.
+    # The turns take about (7P/8 + P/4)/2 · h per pitch around the mean-radius circle.
     h = ISO_THREAD_H * pitch
     ridge_per_mm = (0.875 + 0.25) / 2 * pitch * h * 2 * math.pi * (major_d / 2 - h / 2) / pitch
     assert tube.is_valid
@@ -31,8 +31,8 @@ def test_thread_profile_in_section():
     loops = section_loops(shape_to_mesh(tube), "y", 0.0)
     inner_x = np.concatenate([loop[:, 0] for loop in loops])
     inner_x = np.abs(inner_x[np.abs(inner_x) < 23])
-    assert inner_x.min() == pytest.approx(minor_diameter(38.35, 4.0) / 2, abs=0.05)   # вершины витков
-    assert inner_x.max() == pytest.approx(38.35 / 2, abs=0.05)                       # дно впадин = стенка
+    assert inner_x.min() == pytest.approx(minor_diameter(38.35, 4.0) / 2, abs=0.05)   # thread crests
+    assert inner_x.max() == pytest.approx(38.35 / 2, abs=0.05)                       # bottom of the grooves = the wall
 
 
 def test_sphere_export_has_no_degenerate_triangles(tmp_path):

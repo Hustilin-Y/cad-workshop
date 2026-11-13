@@ -1,16 +1,16 @@
 # {{name}}
 
-Ремикс `{{file}}` (источник и лицензия — в [SOURCE.md](SOURCE.md)).
+A remix of `{{file}}` (source and licence in [SOURCE.md](SOURCE.md)).
 
-## Что меняем и зачем
+## What changes and why
 
 1. 
 
-## Печать
+## Printing
 
-- Пластик: PLA
-- Ориентация (предложение): 
+- Plastic: PLA
+- Orientation (suggested): 
 
-## История
+## History
 
-- {{date}}: создан ремикс.
+- {{date}}: remix created.
