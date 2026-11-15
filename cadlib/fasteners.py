@@ -28,8 +28,8 @@ class Metric:
     csk_d: float          # countersink for a 90° countersunk head — ISO 15065 (= theoretical dk max, ISO 7046-1)
     nut_s: float          # nut across flats — ISO 4032 (s)
     nut_m: float          # nut height — ISO 4032 (m max)
-    insert_d: float       # heat-set insert hole — D3 from the CNC Kitchen and ruthex tables (for a printed hole)
-    insert_l: float       # heat-set insert length (typical)
+    insert_d: float | None  # heat-set insert hole — D3 from the CNC Kitchen and ruthex tables (for a printed hole); None = not described
+    insert_l: float | None  # heat-set insert length (typical)
 
 
 # Reference sizes, mm. Sources: ISO 273:1979, ISO 4762:2004, DIN 974-1:2008,
@@ -43,7 +43,12 @@ METRIC: dict[str, Metric] = {
     "M3":   Metric(3.0, 3.2, 5.5, 3.0, 6.0, 6.3, 5.5, 2.4, 4.0, 5.7),
     "M4":   Metric(4.0, 4.3, 7.0, 4.0, 8.0, 9.4, 7.0, 3.2, 5.6, 8.1),
     "M5":   Metric(5.0, 5.3, 8.5, 5.0, 10.0, 10.4, 8.0, 4.7, 6.4, 9.5),
+    "M6":   Metric(6.0, 6.4, 10.0, 6.0, 11.0, 12.6, 10.0, 5.2, None, None),
 }
+
+# Hex head bolts (ISO 4017 / DIN 933) have the same across-flats size as the ISO 4032 nut for M3–M6,
+# so nut_pocket(size, p, depth=HEX_HEAD_K[size] + ...) also holds a bolt head.
+HEX_HEAD_K: dict[str, float] = {"M3": 2.0, "M4": 2.8, "M5": 3.5, "M6": 4.0}   # head height k, ISO 4017
 
 
 def metric(size: str) -> Metric:
@@ -130,4 +135,6 @@ def insert_hole(size: str, p: Profile, hole_d: float | None = None, length: floa
     m = metric(size)
     d = m.insert_d if hole_d is None else hole_d
     length = m.insert_l if length is None else length
+    if d is None or length is None:
+        raise ValueError(f"insert size for {size} isn't described: measure the insert and pass hole_d and length")
     return _down_cylinder(d, length + extra) + chamfer_ring(d, 0.4)

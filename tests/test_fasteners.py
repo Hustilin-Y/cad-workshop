@@ -77,5 +77,11 @@ def test_wood_screw_countersink():
 
 
 def test_unknown_size():
-    with pytest.raises(ValueError, match="M6"):
-        f.clearance_hole("M6", 5, P)
+    with pytest.raises(ValueError, match="M8"):
+        f.clearance_hole("M8", 5, P)
+
+
+def test_insert_without_sizes_asks_for_a_measurement():
+    with pytest.raises(ValueError, match="measure"):
+        f.insert_hole("M6", P)
+    assert f.insert_hole("M6", P, hole_d=8.0, length=12.7).volume > 0

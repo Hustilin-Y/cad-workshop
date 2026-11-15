@@ -50,3 +50,18 @@ def test_impossible_rounding_leaves_the_part_alone():
     b = block()
     body, done = soften(b, vertical_edges(b), 40.0)   # both 40 and 20 are over half the side
     assert done == 0 and body.volume == pytest.approx(W * D * H)
+
+
+def test_a_result_that_lost_volume_is_refused():
+    """OCCT can return a 'valid' single solid that lost a whole lobe; _apply must keep the body then."""
+    from cadlib.finish import _apply
+
+    body = Box(20, 20, 20).solids()[0]
+    shrunk = Box(10, 10, 10)
+
+    def broken(edges, size):
+        return shrunk
+
+    result, done = _apply(broken, body, list(body.edges())[:1], 1.0)
+    assert done == 0
+    assert result.volume == pytest.approx(body.volume)

@@ -14,15 +14,28 @@ from __future__ import annotations
 from build123d import Edge, Solid, chamfer, fillet
 
 
+def _accept(body: Solid, result, edges, size: float) -> Solid | None:
+    """The result if it's one valid solid whose volume moved no more than a rounding or a chamfer of `size`
+    along these edges can move it (edge length × size², generous). OCCT sometimes returns a "valid" single solid
+    that lost a whole lobe of the body (seen on a chamfer across a fused body): that is refused."""
+    solids = result.solids()
+    if len(solids) != 1 or not solids[0].is_valid:
+        return None
+    edges = edges if isinstance(edges, (list, tuple)) else [edges]
+    limit = sum(e.length for e in edges) * size * size + 1e-6 * body.volume
+    if abs(solids[0].volume - body.volume) > limit:
+        return None
+    return solids[0]
+
+
 def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]:
     # First all edges in one operation: OCCT rounds a face's outline (a chain of tangent edges)
     # only as a whole; one by one, neighbouring edges change length and can no longer be found.
     for s in (size, size / 2):
         try:
-            result = op(edges, s)
-            solids = result.solids()
-            if len(solids) == 1 and solids[0].is_valid:
-                return solids[0], len(edges)
+            accepted = _accept(body, op(edges, s), edges, s)
+            if accepted is not None:
+                return accepted, len(edges)
         except Exception:  # noqa: BLE001
             pass
     done = 0
@@ -33,10 +46,9 @@ def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]
             if current is None:
                 break
             try:
-                result = op(current, s)
-                solids = result.solids()
-                if len(solids) == 1 and solids[0].is_valid:
-                    body = solids[0]
+                accepted = _accept(body, op(current, s), current, s)
+                if accepted is not None:
+                    body = accepted
                     done += 1
                     break
             except Exception:  # noqa: BLE001  OCCT raises various exceptions on a failed rounding
