@@ -37,5 +37,5 @@ def estimate(mesh: trimesh.Trimesh, profile: Profile) -> Estimate:
     printed_cm3 = shell_cm3 + profile.infill_share * (volume_cm3 - shell_cm3)
     solid_g = volume_cm3 * profile.density_g_cm3
     printed_g = printed_cm3 * profile.density_g_cm3
-    cost = printed_g / 1000.0 * profile.price_per_kg if profile.price_per_kg else None
+    cost = printed_g / 1000.0 * profile.price_per_kg if profile.price_per_kg is not None else None
     return Estimate(solid_g, printed_g, cost)

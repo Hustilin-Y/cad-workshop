@@ -83,7 +83,7 @@ def check_mesh(
 def down_vector(print_down: str | Sequence[float]) -> np.ndarray:
     if isinstance(print_down, str):
         key = print_down.strip().lower()
-        key = key if key[0] in "+-" else "+" + key
+        key = key if key.startswith(("+", "-")) else "+" + key
         if key not in AXIS_NAMES:
             raise ValueError(f"side {print_down!r}: expected one of {', '.join(AXIS_NAMES)} or a vector (x, y, z)")
         return np.array(AXIS_NAMES[key], float)

@@ -174,3 +174,39 @@ def test_build_all_skips_logo_parts_without_logo_data(tmp_path, monkeypatch, cap
     assert main(["build", "--all"]) == 0
     out = capsys.readouterr().out
     assert "skipped" in out and "1 of 2 built, 1 skipped" in out
+
+
+# --- regression tests for known bugs -----------------------------------------------
+
+
+def test_weight_cost_with_zero_spool_price(tmp_path):
+    """Bug: cadlib/estimate.py line 40 uses 'if profile.price_per_kg' so a spool price of 0
+    gives cost None instead of 0.0."""
+    from cadlib.config import PRINTER_TOML
+
+    text = PRINTER_TOML.read_text(encoding="utf-8").replace(
+        "density_g_cm3 = 1.24\n", "density_g_cm3 = 1.24\nprice_per_kg = 0\n", 1
+    )
+    toml = tmp_path / "printer.toml"
+    toml.write_text(text, encoding="utf-8")
+    profile = load_profile(material="PLA", path=toml)
+    est = estimate(trimesh.creation.box((20, 20, 20)), profile)
+    assert est.cost == 0.0
+    assert est.summary(profile).endswith("≈ 0 UAH")
+
+
+def test_down_vector_rejects_empty_side(tmp_path):
+    """Bug: cadlib/checks.py line 86 down_vector('') (or '   ') raises IndexError at key[0]
+    instead of ValueError."""
+    from cadlib.checks import down_vector
+
+    for bad in ("", "   "):
+        with pytest.raises(ValueError):
+            down_vector(bad)
+
+    # Also assert that the CLI returns exit-code 2 (user error) for --down ''
+    stl_path = tmp_path / "plate.stl"
+    plate = trimesh.creation.box((80, 4, 50))
+    plate.apply_translation((0, 0, 25))
+    plate.export(stl_path)
+    assert main(["check", str(stl_path), "--down", ""]) == 2
