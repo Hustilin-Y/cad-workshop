@@ -118,7 +118,7 @@ The workshop only prepares files. Slicing and printing are done by [bambu-mcp](h
 PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
 ```
 
-Every print start is confirmed by the owner outside the model. Without bambu-mcp, open the 3MF in Bambu Studio as before.
+Claude never starts a print: the owner starts every print, outside the model. Without bambu-mcp, open the 3MF in Bambu Studio as before.
 
 ## What's not here
 
