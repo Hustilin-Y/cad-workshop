@@ -203,3 +203,22 @@ def test_remove_stale(tmp_path):
     p.write_text("{}", encoding="utf-8")
     remove_stale(p)
     assert not p.exists()
+
+
+def test_merge_checks_worst_and_sum():
+    from cadlib.manifest import merge_checks
+
+    a = {"failed": False, "islands": 2, "bodies_above_bed": 0, "overhang_warn": False, "base_warn": False, "supports_suggested": True}
+    b = {"failed": False, "islands": 3, "bodies_above_bed": 1, "overhang_warn": True, "base_warn": False, "supports_suggested": True}
+    assert merge_checks([a, b], "max") == {
+        "failed": False, "islands": 3, "bodies_above_bed": 1, "overhang_warn": True, "base_warn": False, "supports_suggested": True}
+    assert merge_checks([a, b], "sum")["islands"] == 5
+
+
+def test_plate_hints_agree_or_conflict():
+    from cadlib.manifest import plate_hints
+
+    assert plate_hints([{"walls": 3}, {"walls": 3}]) == ({"walls": 3}, [])
+    assert plate_hints([{"walls": 3, "brim": "none"}, {"walls": 4, "brim": "none"}]) == ({}, ["walls"])
+    assert plate_hints([{"walls": 3}, {}]) == ({}, ["walls"])
+    assert plate_hints([{}, {}]) == ({}, [])

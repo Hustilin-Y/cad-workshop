@@ -113,6 +113,36 @@ def checks_summary(report: Report) -> dict:
     }
 
 
+_CHECK_INTS: Final = ("islands", "bodies_above_bed")
+_CHECK_BOOLS: Final = ("failed", "overhang_warn", "base_warn")
+
+
+def merge_checks(summaries: list[dict], how: str) -> dict:
+    """Combine checks_summary() dicts: flags are OR-ed, counts take the worst ("max") or add up ("sum")."""
+    if how not in ("max", "sum"):
+        raise ValueError(f"how must be 'max' or 'sum', got {how!r}")
+    pick = max if how == "max" else sum
+    merged: dict = {k: any(s[k] for s in summaries) for k in _CHECK_BOOLS}
+    merged.update({k: pick([s[k] for s in summaries] or [0]) for k in _CHECK_INTS})
+    merged["supports_suggested"] = any(s["supports_suggested"] for s in summaries)
+    return merged
+
+
+def plate_hints(hints: list[dict]) -> tuple[dict, list[str]]:
+    """Hints of the parts on one plate: the common hints when all parts agree, else ({}, sorted conflicting keys).
+
+    A key one part sets and another leaves out is a conflict too: the plate would print one of them
+    with settings it never asked for."""
+    keys = sorted({k for h in hints for k in h})
+    conflicts = [
+        k for k in keys
+        if len({json.dumps(h[k], sort_keys=True) if k in h else None for h in hints}) > 1
+    ]
+    if conflicts:
+        return {}, conflicts
+    return (dict(hints[0]) if hints else {}), []
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 

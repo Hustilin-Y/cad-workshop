@@ -89,6 +89,15 @@ def test_invalid_hint_fails_the_build_naming_the_key(tmp_path, capsys):
     assert not (folder / "out").exists()  # fails before exporting
 
 
+def test_erroring_build_leaves_no_stale_manifest(tmp_path):
+    folder = _part(tmp_path, "PRINT_HINTS = {'walls': 99}\n")
+    stale = folder / "out" / "tiny.print.json"
+    stale.parent.mkdir()
+    stale.write_text("{}\n", encoding="utf-8")
+    assert main(["build", str(folder), "--print-ready"]) == 2
+    assert not stale.exists()
+
+
 def test_overrides_recorded(tmp_path):
     folder = _part(tmp_path)
     assert main(["build", str(folder), "--print-ready", "--set", "WIDTH=45"]) == 0

@@ -264,11 +264,14 @@ def _build(args, module) -> int:
     print_down = _print_down(getattr(module, "PRINT_DOWN", None), "PRINT_DOWN")
     section = args.section or getattr(module, "SECTION", None)
     out_dir = folder / "out"
+    manifest_path = out_dir / f"{name}.print.json"
+    from cadlib.manifest import remove_stale, validate_hints
+
+    remove_stale(manifest_path)  # first, so that no exit path (error, failed check) leaves an old manifest behind
     source = folder / module.SOURCE if getattr(module, "SOURCE", None) else None
     if source is not None and not source.is_file():
         raise UserError(f"SOURCE = {module.SOURCE!r}: no such file in {_rel(folder)}")
     source_hash = _sha256(source) if source else None
-    from cadlib.manifest import validate_hints
 
     try:
         hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
@@ -311,15 +314,11 @@ def _build(args, module) -> int:
 
     png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
     print(f"  PNG  {_rel(png)}")
-    manifest_path = out_dir / f"{name}.print.json"
-    if getattr(args, "print_ready", False) and not report.failed and "3mf" in files:
-        _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
-        print(f"  JSON {_rel(manifest_path)}")
-    else:
-        from cadlib.manifest import remove_stale
-
-        remove_stale(manifest_path)  # a stale manifest must never describe a file that is not print-ready
-        if getattr(args, "print_ready", False) and not report.failed:
+    if getattr(args, "print_ready", False) and not report.failed:
+        if "3mf" in files:
+            _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
+            print(f"  JSON {_rel(manifest_path)}")
+        else:
             print("  no manifest: FORMATS has no 3mf")
     print()
     print(report.format())
@@ -573,7 +572,12 @@ def cmd_kit(args) -> int:
     """Build each part of every kit in <folder>/kit.py, turn it as printed and write one 3MF per kit."""
     import trimesh
 
+    from cadlib.checks import check_mesh
+    from cadlib.estimate import estimate
     from cadlib.export import plate_origin, shape_to_mesh, write_plates_3mf
+    from cadlib.manifest import (
+        build_manifest, checks_summary, merge_checks, plate_hints, remove_stale, validate_hints, write_manifest,
+    )
     from cadlib.orient import print_ready
     from cadlib.preview import render_preview
 
@@ -592,27 +596,46 @@ def cmd_kit(args) -> int:
     bed_xy = profile.build_volume_mm[:2]
     out_dir = folder / "out"
     out_dir.mkdir(exist_ok=True)
-    built: dict[Path, tuple[str, trimesh.Trimesh]] = {}
+    built: dict[Path, dict] = {}
 
-    def part(rel: str) -> tuple[str, trimesh.Trimesh]:
-        """A part folder (relative to the kit's folder) built and turned as printed; each built once."""
+    def part(rel: str) -> dict:
+        """A part folder (relative to the kit's folder) built and turned as printed; each built once.
+
+        Its checks run on the mesh as designed with its PRINT_DOWN (check_mesh turns it itself)."""
         path = (folder / rel).resolve()
         if path not in built:
             module = load_model(path)
+            try:
+                hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
+            except ValueError as e:
+                raise UserError(f"{_rel(path)}: {e}") from e
             result = run_model(module, profile)
             mesh = result if isinstance(result, trimesh.Trimesh) else shape_to_mesh(result)
             down = _print_down(getattr(module, "PRINT_DOWN", None), f"{_rel(path)}: PRINT_DOWN")
-            built[path] = (getattr(module, "NAME", path.name), print_ready(mesh, down) if down else mesh)
+            report = check_mesh(mesh, profile, int(getattr(module, "EXPECTED_BODIES", 1)), down)
+            built[path] = {
+                "name": getattr(module, "NAME", path.name),
+                "mesh": print_ready(mesh, down) if down else mesh,
+                "hints": hints,
+                "report": report,
+            }
         return built[path]
 
     for kit_name, plate_list in kits.items():
+        manifest_path = out_dir / f"{kit_name}.print.json"
+        remove_stale(manifest_path)  # first, so that no exit path (error, failed check) leaves an old manifest behind
         plates = []
+        plate_parts = []  # per plate: the built part behind each object
         for plate in plate_list:
             objects = []
+            used = []
             for rel, count in plate:
-                name, mesh = part(rel)
-                objects += [(name if count == 1 else f"{name} {k + 1}", mesh) for k in range(count)]
+                info = part(rel)
+                name = info["name"]
+                objects += [(name if count == 1 else f"{name}#{k + 1}", info["mesh"]) for k in range(count)]
+                used += [info] * count
             plates.append(objects)
+            plate_parts.append(used)
         path = out_dir / f"{kit_name}.3mf"
         try:
             layouts = write_plates_3mf(plates, path, bed_xy, profile.bed_margin_mm)
@@ -632,6 +655,46 @@ def cmd_kit(args) -> int:
         png = render_preview(trimesh.util.concatenate(placed), out_dir / f"{kit_name}.png",
                              f"{kit_name}: the plates as in the 3MF")
         print(f"  PNG  {_rel(png)}")
+        failed = sorted({i["name"] for used in plate_parts for i in used if i["report"].failed})
+        if failed:
+            print(f"  no manifest: {', '.join(failed)} fail their checks (see cad.py build)")
+            continue
+        manifest_plates = []
+        for n, (plate, used) in enumerate(zip(plates, plate_parts), start=1):
+            hints, conflicts = plate_hints([i["hints"] for i in used])
+            entry = {
+                "index": n,
+                "objects": [
+                    {
+                        "name": name,
+                        "bbox_mm": [round(float(v), 3) for v in mesh.extents],
+                        "volume_mm3": round(float(mesh.volume), 3),
+                    }
+                    for name, mesh in plate
+                ],
+                "checks": merge_checks([checks_summary(i["report"]) for i in used], "max"),
+                "hints": hints,
+                "estimate": {"grams": round(sum(estimate(m, profile).printed_g for _, m in plate), 1)},
+            }
+            if conflicts:
+                entry["hint_conflicts"] = conflicts
+            manifest_plates.append(entry)
+        manifest = build_manifest(
+            kind="kit",
+            name=kit_name,
+            file=path,
+            print_ready=True,
+            model_path=kit_file,
+            overrides={},
+            profile=profile,
+            plates=manifest_plates,
+            checks=merge_checks([p["checks"] for p in manifest_plates], "sum"),
+            estimate_g=round(sum(p["estimate"]["grams"] for p in manifest_plates), 1),
+            hints={},
+            original_sha256=None,
+        )
+        write_manifest(manifest, manifest_path)
+        print(f"  JSON {_rel(manifest_path)}")
     print(f"Done in {time.perf_counter() - t0:.1f} s. Each part's own checks are in its build report (cad.py build).")
     return 0
 

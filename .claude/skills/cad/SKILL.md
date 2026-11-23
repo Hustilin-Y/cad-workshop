@@ -91,7 +91,7 @@ from cadlib.finish import soften, bevel           # roundings and chamfers that 
 - Orientation: `uv run cad.py orient <folder or file>` ranks the sides and writes a PNG for each; `build --print-ready` exports STL/3MF already turned with `PRINT_DOWN` on the bed.
 - The report's last line is the weight (and cost, if `price_per_kg` is set in `printer.toml`): mention it to the user.
 - After changes to `cadlib/`: `uv run cad.py build --all`.
-- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf`: each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. Hand the user this file.
+- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf` and `out/<name>.print.json` (the print manifest; copies are named `part#1`, `part#2`): each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. Hand the user this file.
 - Someone else's file without edits: `uv run cad.py check <file>` (`--down -y` if it prints on another side), `uv run cad.py inspect <file>`, `uv run cad.py preview <file> --section z`.
 
 ## What not to do

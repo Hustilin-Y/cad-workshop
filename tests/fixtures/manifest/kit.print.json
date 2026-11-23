@@ -1,0 +1,97 @@
+{
+ "checks": {
+  "base_warn": false,
+  "bodies_above_bed": 0,
+  "failed": false,
+  "islands": 2,
+  "overhang_warn": true,
+  "supports_suggested": true
+ },
+ "estimate": {
+  "grams": 21.1
+ },
+ "file": "desk-kit.3mf",
+ "file_sha256": "0cc43bcf0a4a2dabb488cf2e22e2617feb7de7c197a13a21e53bd42dfd4d399b",
+ "hints": {},
+ "kind": "kit",
+ "name": "desk-kit",
+ "plates": [
+  {
+   "checks": {
+    "base_warn": false,
+    "bodies_above_bed": 0,
+    "failed": false,
+    "islands": 0,
+    "overhang_warn": false,
+    "supports_suggested": false
+   },
+   "estimate": {
+    "grams": 3.1
+   },
+   "hints": {
+    "walls": 3
+   },
+   "index": 1,
+   "objects": [
+    {
+     "bbox_mm": [
+      20,
+      10,
+      5
+     ],
+     "name": "clip#1",
+     "volume_mm3": 500.0
+    },
+    {
+     "bbox_mm": [
+      20,
+      10,
+      5
+     ],
+     "name": "clip#2",
+     "volume_mm3": 500.0
+    }
+   ]
+  },
+  {
+   "checks": {
+    "base_warn": false,
+    "bodies_above_bed": 0,
+    "failed": false,
+    "islands": 2,
+    "overhang_warn": true,
+    "supports_suggested": true
+   },
+   "estimate": {
+    "grams": 18.0
+   },
+   "hint_conflicts": [
+    "walls"
+   ],
+   "hints": {},
+   "index": 2,
+   "objects": [
+    {
+     "bbox_mm": [
+      80,
+      20,
+      15
+     ],
+     "name": "arm",
+     "volume_mm3": 12000.0
+    }
+   ]
+  }
+ ],
+ "print_ready": true,
+ "profile": {
+  "material": "PLA",
+  "nozzle_mm": 0.4
+ },
+ "schema": 1,
+ "source": {
+  "git_commit": null,
+  "model_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "overrides": {}
+ }
+}
