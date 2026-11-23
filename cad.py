@@ -569,7 +569,10 @@ def cmd_build_all(args) -> int:
 
 
 def cmd_kit(args) -> int:
-    """Build each part of every kit in <folder>/kit.py, turn it as printed and write one 3MF per kit."""
+    """Build each part of every kit in <folder>/kit.py, turn it as printed and write one 3MF per kit.
+
+    Per-part checks here are check_mesh only: the extras of `build` (EXPECTED_VOLUME_DELTA, remix
+    source checks, the 3MF re-check) are not run."""
     import trimesh
 
     from cadlib.checks import check_mesh
@@ -596,6 +599,9 @@ def cmd_kit(args) -> int:
     bed_xy = profile.build_volume_mm[:2]
     out_dir = folder / "out"
     out_dir.mkdir(exist_ok=True)
+    for kit_name in kits:  # first of all, so that no error in one kit leaves another kit's old manifest behind
+        remove_stale(out_dir / f"{kit_name}.print.json")
+    failures: list[str] = []
     built: dict[Path, dict] = {}
 
     def part(rel: str) -> dict:
@@ -615,6 +621,7 @@ def cmd_kit(args) -> int:
             report = check_mesh(mesh, profile, int(getattr(module, "EXPECTED_BODIES", 1)), down)
             built[path] = {
                 "name": getattr(module, "NAME", path.name),
+                "folder": _rel(path),
                 "mesh": print_ready(mesh, down) if down else mesh,
                 "hints": hints,
                 "report": report,
@@ -623,7 +630,6 @@ def cmd_kit(args) -> int:
 
     for kit_name, plate_list in kits.items():
         manifest_path = out_dir / f"{kit_name}.print.json"
-        remove_stale(manifest_path)  # first, so that no exit path (error, failed check) leaves an old manifest behind
         plates = []
         plate_parts = []  # per plate: the built part behind each object
         for plate in plate_list:
@@ -634,6 +640,10 @@ def cmd_kit(args) -> int:
                 name = info["name"]
                 objects += [(name if count == 1 else f"{name}#{k + 1}", info["mesh"]) for k in range(count)]
                 used += [info] * count
+            names = [n for n, _ in objects]
+            dupes = sorted({n for n in names if names.count(n) > 1})
+            if dupes:
+                raise UserError(f"{kit_name}: duplicate object name {', '.join(map(repr, dupes))} on one plate")
             plates.append(objects)
             plate_parts.append(used)
         path = out_dir / f"{kit_name}.3mf"
@@ -655,9 +665,11 @@ def cmd_kit(args) -> int:
         png = render_preview(trimesh.util.concatenate(placed), out_dir / f"{kit_name}.png",
                              f"{kit_name}: the plates as in the 3MF")
         print(f"  PNG  {_rel(png)}")
-        failed = sorted({i["name"] for used in plate_parts for i in used if i["report"].failed})
+        failed = sorted({i["folder"] for used in plate_parts for i in used if i["report"].failed})
         if failed:
-            print(f"  no manifest: {', '.join(failed)} fail their checks (see cad.py build)")
+            verb = "fails its" if len(failed) == 1 else "fail their"
+            print(f"  no manifest: {', '.join(failed)} {verb} checks")
+            failures.append(f"{kit_name}: {', '.join(failed)} {verb} checks (see cad.py build <part>)")
             continue
         manifest_plates = []
         for n, (plate, used) in enumerate(zip(plates, plate_parts), start=1):
@@ -695,7 +707,12 @@ def cmd_kit(args) -> int:
         )
         write_manifest(manifest, manifest_path)
         print(f"  JSON {_rel(manifest_path)}")
-    print(f"Done in {time.perf_counter() - t0:.1f} s. Each part's own checks are in its build report (cad.py build).")
+    elapsed = time.perf_counter() - t0
+    if failures:
+        for line in failures:
+            print(f"KIT FAILED ({elapsed:.1f} s): {line}")
+        return 1
+    print(f"Done in {elapsed:.1f} s. Each part's own checks are in its build report (cad.py build).")
     return 0
 
 

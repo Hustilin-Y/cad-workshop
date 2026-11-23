@@ -201,13 +201,55 @@ def test_kit_invalid_hint_is_an_error_and_leaves_no_manifest(tmp_path, capsys):
     assert not stale.exists()
 
 
-def test_kit_with_a_failing_part_writes_no_manifest(tmp_path):
+def _too_tall(tmp_path, name="one"):
+    """A part that lays out fine but fails check 3 (taller than the printer)."""
+    folder = tmp_path / name
+    (folder / "model.py").write_text(
+        "from build123d import Box, Pos\n"
+        f"NAME = '{name}'\n"
+        "def build(p):\n"
+        "    return Pos(0, 0, 200) * Box(20, 10, 400)\n", encoding="utf-8")
+
+
+def test_kit_with_a_failing_part_fails_and_writes_no_manifest(tmp_path, capsys):
+    first = _kit(tmp_path, [[(".", 1)], [("../two", 1)]], {"one": (20, ""), "two": (20, "")})
+    _too_tall(tmp_path)
+    stale = first / "out" / "demo.print.json"
+    stale.parent.mkdir()
+    stale.write_text("{}\n", encoding="utf-8")
+    assert main(["kit", str(first)]) == 1
+    out = capsys.readouterr().out
+    assert "KIT FAILED" in out and "demo: " in out and "fails its checks" in out and "Done in" not in out
+    assert not stale.exists()
+    assert (first / "out" / "demo.3mf").is_file()
+
+
+def test_kit_layout_error_exits_2_and_leaves_no_manifest(tmp_path):
     first = _kit(tmp_path, [[(".", 1)]], {"one": (300, "")})  # longer than the bed
     stale = first / "out" / "demo.print.json"
     stale.parent.mkdir()
     stale.write_text("{}\n", encoding="utf-8")
-    main(["kit", str(first)])
+    assert main(["kit", str(first)]) == 2
     assert not stale.exists()
+
+
+def test_kit_error_in_one_kit_removes_every_kits_stale_manifest(tmp_path):
+    first = _kit(tmp_path, [[(".", 1)]], {"one": (20, "PRINT_HINTS = {'walls': 99}\n"), "two": (20, "")})
+    (first / "kit.py").write_text(
+        "KITS = {'demo': [[('.', 1)]], 'other': [[('../two', 1)]]}\n", encoding="utf-8")
+    stale = first / "out" / "other.print.json"
+    stale.parent.mkdir()
+    stale.write_text("{}\n", encoding="utf-8")
+    assert main(["kit", str(first)]) == 2
+    assert not stale.exists()
+
+
+def test_kit_duplicate_object_names_on_a_plate_are_refused(tmp_path, capsys):
+    first = _kit(tmp_path, [[(".", 1), ("../two", 1)]], {"one": (20, ""), "two": (20, "")})
+    (tmp_path / "two" / "model.py").write_text(
+        (tmp_path / "one" / "model.py").read_text(encoding="utf-8"), encoding="utf-8")
+    assert main(["kit", str(first)]) == 2
+    assert "duplicate" in capsys.readouterr().out
 
 
 # The consumer's fixture pins the keys. Opaque (free-form) dicts are not compared inside. The
