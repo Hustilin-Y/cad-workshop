@@ -268,6 +268,12 @@ def _build(args, module) -> int:
     if source is not None and not source.is_file():
         raise UserError(f"SOURCE = {module.SOURCE!r}: no such file in {_rel(folder)}")
     source_hash = _sha256(source) if source else None
+    from cadlib.manifest import validate_hints
+
+    try:
+        hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
+    except ValueError as e:
+        raise UserError(str(e)) from e
 
     result = run_model(module, profile)
     if isinstance(result, trimesh.Trimesh):
@@ -280,6 +286,7 @@ def _build(args, module) -> int:
         print(f"  {fmt.upper():4} {_rel(path)}  {path.stat().st_size / 1024:.0f} KB")
 
     mesh = load_mesh(files["stl"]) if "stl" in files else load_mesh(next(iter(files.values())))
+    plate_mesh = mesh  # what lies on the bed: the turned mesh for --print-ready with PRINT_DOWN
     if getattr(args, "print_ready", False):
         if print_down is None:
             print("  print-ready: no PRINT_DOWN, the files already lie as printed (bottom on the bed)")
@@ -289,6 +296,7 @@ def _build(args, module) -> int:
 
             turned = print_ready(mesh, print_down)
             export_mesh(turned, out_dir, name, tuple(f for f in formats if f != "step"))
+            plate_mesh = turned
             print(f"  print-ready: STL/3MF turned with {label_for(down_vector(print_down))} on the bed; STEP as designed")
     report = check_mesh(mesh, profile, expected_bodies, print_down)
     if "3mf" in files and "stl" in files:
@@ -303,6 +311,16 @@ def _build(args, module) -> int:
 
     png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
     print(f"  PNG  {_rel(png)}")
+    manifest_path = out_dir / f"{name}.print.json"
+    if getattr(args, "print_ready", False) and not report.failed and "3mf" in files:
+        _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
+        print(f"  JSON {_rel(manifest_path)}")
+    else:
+        from cadlib.manifest import remove_stale
+
+        remove_stale(manifest_path)  # a stale manifest must never describe a file that is not print-ready
+        if getattr(args, "print_ready", False) and not report.failed:
+            print("  no manifest: FORMATS has no 3mf")
     print()
     print(report.format())
     print()
@@ -312,6 +330,36 @@ def _build(args, module) -> int:
         return 1
     print(f"Done in {elapsed:.1f} s. Open the STL/3MF in Bambu Studio and make sure it shows no mesh warnings.")
     return 0
+
+
+def _write_print_manifest(args, module, name, file, mesh, profile, report, hints, original_sha256) -> None:
+    from cadlib.estimate import estimate
+    from cadlib.manifest import build_manifest, checks_summary, write_manifest
+
+    overrides = {}
+    for item in getattr(args, "set", None) or []:
+        key, _, raw = item.partition("=")
+        overrides[key.strip()] = raw.strip()
+    obj = {
+        "name": name,
+        "bbox_mm": [round(float(v), 3) for v in mesh.extents],
+        "volume_mm3": round(float(mesh.volume), 3),
+    }
+    manifest = build_manifest(
+        kind="part",
+        name=name,
+        file=file,
+        print_ready=True,
+        model_path=Path(module.__file__),
+        overrides=overrides,
+        profile=profile,
+        plates=[{"index": 1, "objects": [obj]}],
+        checks=checks_summary(report),
+        estimate_g=round(estimate(mesh, profile).printed_g, 1),
+        hints=hints,
+        original_sha256=original_sha256,
+    )
+    write_manifest(manifest, file.parent / f"{name}.print.json")
 
 
 def _check_source(folder: Path, source: Path, hash_before: str, result_mesh, module, report) -> None:
