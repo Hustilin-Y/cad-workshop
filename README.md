@@ -96,9 +96,33 @@ tests/              pytest
 
 The workshop installs as an add-in for [multiclaude](https://github.com/korsicheg/multiclaude), a Telegram bot that gives each person their own Claude Code. Then a part can be ordered from the chat, and the assistant sends back the PNG preview and a print-ready 3MF. Setup is in [multiclaude/addon/README.md](multiclaude/addon/README.md). An Ubuntu server also needs `libgl1`; the add-in's `setup` installs it. On a weak laptop a build takes 10–60 s and up to 0.7 GB of memory, a downloaded model of a million triangles up to 1.2 GB.
 
+## Printing through bambu-mcp
+
+The workshop only prepares files. Slicing and printing are done by [bambu-mcp](https://github.com/Hustilin-Y/bambu-mcp), a separate project (a connector for Claude). The link between the two is a print manifest, `out/<name>.print.json` (schema version 1, UTF-8, sorted keys): the print-ready 3MF with its hash, the weight estimate, the material, nozzle and tolerances, the check results and the hints below.
+
+- It is written by `build --print-ready` and `kit` only. A plain `build` writes none and removes a stale one.
+- A build or kit whose checks fail writes no manifest.
+- A part may carry slicing hints in `model.py`; all keys are optional, any other key or value fails the build with a message naming the key:
+
+| Key | Values |
+|---|---|
+| `walls` | integer 1..10 |
+| `infill_pct` | integer 0..100 |
+| `infill_pattern` | `grid`, `gyroid`, `honeycomb`, `cubic`, `line`, `rectilinear`, `zig-zag`, `adaptivecubic`, `lightning` |
+| `supports` | `none`, `auto`, `tree`, `normal` |
+| `brim` | `none`, `auto`, `outer` |
+| `material` | a plastic described in `[materials.*]` of `printer.toml` |
+| `material_reason` | a string of at most 200 characters |
+
+```python
+PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
+```
+
+Every print start is confirmed by the owner outside the model. Without bambu-mcp, open the 3MF in Bambu Studio as before.
+
 ## What's not here
 
-No connection to the printer, no slicing, no downloading by link, no multi-colour (AMS). The scripts never go online; a test checks that.
+No connection to the printer, no slicing, no downloading by link, no multi-colour (AMS). The scripts never go online; a test checks that. Printing from a build is done by a separate project, see [Printing through bambu-mcp](#printing-through-bambu-mcp).
 
 ## Licence
 

@@ -5,7 +5,7 @@ description: Designing parts for 3D printing from scratch and reworking other pe
 
 # CAD workshop: a part or a remix
 
-The printer is a Bambu Lab P2S; the user prints themselves through Bambu Studio. Our job is an accurate model that passes the checks, and the files in `out/`. Project rules are in `CLAUDE.md`, tolerances in `printer.toml`.
+The printer is a Bambu Lab P2S; the user prints through Bambu Studio, or through the bambu-mcp tools when they ask to print (see "What not to do"). Our job is an accurate model that passes the checks, and the files in `out/`. Project rules are in `CLAUDE.md`, tolerances in `printer.toml`.
 
 Every command runs from the project root as `uv run cad.py ...`.
 
@@ -91,12 +91,12 @@ from cadlib.finish import soften, bevel           # roundings and chamfers that 
 - Orientation: `uv run cad.py orient <folder or file>` ranks the sides and writes a PNG for each; `build --print-ready` exports STL/3MF already turned with `PRINT_DOWN` on the bed.
 - The report's last line is the weight (and cost, if `price_per_kg` is set in `printer.toml`): mention it to the user.
 - After changes to `cadlib/`: `uv run cad.py build --all`.
-- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf` and `out/<name>.print.json` (the print manifest; copies are named `part#1`, `part#2`): each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. Hand the user this file.
+- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf` and `out/<name>.print.json` (the print manifest; copies are named `part#1`, `part#2`): each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. If a part fails its checks, the kit exits with code 1 and prints `KIT FAILED`, and no manifest is written. Hand the user this file.
 - Someone else's file without edits: `uv run cad.py check <file>` (`--down -y` if it prints on another side), `uv run cad.py inspect <file>`, `uv run cad.py preview <file> --section z`.
 
 ## What not to do
 
-- Don't connect to the printer, don't slice, don't touch Bambu Studio. Printing is the user's business.
+- CAD Workshop itself never connects to the printer or slices. When the owner asks to print, build with `--print-ready` (or `kit`) and hand `out/<name>.print.json` to the bambu-mcp tools (`create_job` takes the manifest path, then `propose_job`, `slice_job`, `job_status`, `jobs`). `create_job` reads paths on the machine where the bambu-mcp service runs: when it runs elsewhere, upload the manifest with that project's `bambu-mcp upload out/<name>.print.json` (it prints the job id) and go on with `propose_job`. Every print start is confirmed by the owner with a Telegram button outside the model: Claude never starts a print itself and there is no start tool. If the bambu-mcp tools are not available in this session, say so and hand over the 3MF as before (open it in Bambu Studio). No automating GUIs (Bambu Studio and the like).
 - Don't add network calls: `test_no_network` catches them.
 - Don't invent fit sizes and don't hard-code clearances.
 - Don't pick the orientation for good: only suggest it, with the reasons.

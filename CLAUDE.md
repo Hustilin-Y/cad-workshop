@@ -14,6 +14,7 @@ Claude Code writes the model as code, builds it, checks it and hands over the fi
 - Everything through `uv`: `uv run cad.py ...`, `uv run pytest`. Install nothing globally.
 - Network only for `uv add`. Scripts never go online and never talk to the printer (a test checks that).
 - No Blender. No automating GUIs (Bambu Studio and the like).
+- CAD Workshop itself never connects to the printer or slices. When the owner asks to print, build with `--print-ready` (or `kit`) and hand `out/<name>.print.json` to the bambu-mcp tools (`create_job` takes the manifest path, then `propose_job`, `slice_job`, `job_status`, `jobs`). `create_job` reads paths on the machine where the bambu-mcp service runs: when it runs elsewhere, upload the manifest with that project's `bambu-mcp upload out/<name>.print.json` (it prints the job id) and go on with `propose_job`. Every print start is confirmed by the owner with a Telegram button outside the model: Claude never starts a print itself and there is no start tool. If the bambu-mcp tools are not available in this session, say so and hand over the 3MF as before (open it in Bambu Studio).
 
 ## Printer profile
 
