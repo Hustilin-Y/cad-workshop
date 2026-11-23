@@ -8,13 +8,13 @@
 
 **Tech Stack:** Python, uv, pytest, the existing cadlib (trimesh, build123d).
 
-**Spec:** `E:\Projects\bambu-mcp\docs\superpowers\specs\2026-11-22-bambu-mcp-design.md`, section 6 ("CAD Workshop contract"). Contract consumer: bambu-mcp phase 2 plan, `E:\Projects\bambu-mcp\docs\superpowers\plans\2026-11-23-phase2-slicing.md` (Task 2 reads this manifest).
+**Spec:** bambu-mcp `docs/superpowers/specs/2026-11-22-bambu-mcp-design.md`, section 6 ("CAD Workshop contract"). Contract consumer: bambu-mcp phase 2 plan, `docs/superpowers/plans/2026-11-23-phase2-slicing.md` in bambu-mcp (Task 2 reads this manifest).
 
 ## Global Constraints
 
 - No network, no printer, no slicer in CAD Workshop: `tests/test_no_network.py` must keep passing unchanged.
 - Everything in the repo in English.
-- The exact JSON shape is pinned by the consumer's fixtures `E:\Projects\bambu-mcp\tests\fixtures\manifest\{part,kit}.print.json` (branch `phase2-slicing`): `estimate: {"grams": n}` at top level and per plate (kits), `profile: {"material", "nozzle_mm", "tolerances"}`, `source` a dict, `checks` and `hints` as in Task 1. The manifest this repo writes must load with bambu-mcp's `load_manifest` unchanged: copy both fixtures into `tests/fixtures/manifest/` here and add a test that the written manifest has the same keys (recursively) as the matching fixture.
+- The exact JSON shape is pinned by the consumer's fixtures bambu-mcp `tests/fixtures/manifest/{part,kit}.print.json` (branch `phase2-slicing`): `estimate: {"grams": n}` at top level and per plate (kits), `profile: {"material", "nozzle_mm", "tolerances"}`, `source` a dict, `checks` and `hints` as in Task 1. The manifest this repo writes must load with bambu-mcp's `load_manifest` unchanged: copy both fixtures into `tests/fixtures/manifest/` here and add a test that the written manifest has the same keys (recursively) as the matching fixture.
 - Manifest schema version `1`. File name `out/<name>.print.json`, UTF-8, LF, `indent=1`, keys sorted.
 - The manifest is written only by `build --print-ready` and `kit`. A plain `build` writes none and deletes a stale `out/<name>.print.json` if one exists (a stale manifest must never describe a non-print-ready file).
 - `PRINT_HINTS` keys (closed list): `walls` (int 1..10), `infill_pct` (int 0..100), `infill_pattern` (one of `grid`, `gyroid`, `honeycomb`, `cubic`, `line`, `rectilinear`, `zig-zag`, `adaptivecubic`, `lightning`), `supports` (`none`, `auto`, `tree`, `normal`), `brim` (`none`, `auto`, `outer`), `material` (a key of `[materials.*]` in `printer.toml`), `material_reason` (str ≤ 200 chars). Any other key or value fails the build with a clear message naming the key.
