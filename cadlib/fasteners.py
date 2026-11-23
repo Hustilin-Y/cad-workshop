@@ -126,6 +126,21 @@ def nut_pocket(size: str, p: Profile, depth: float | None = None, slot: float = 
     return pocket
 
 
+# Пилотное отверстие, чтобы метрический винт сам нарезал резьбу в пластике: ≈ внутренний
+# диаметр резьбы d − 1.0825·P (ISO 724) с округлением вверх, чтобы печатная стенка не трескалась.
+# Для мягкого пластика (PETG) держит хорошо; на частую разборку лучше термовставка.
+SELF_TAP_D: dict[str, float] = {"M2": 1.7, "M2.5": 2.1, "M3": 2.6, "M4": 3.4, "M5": 4.3}
+
+
+def self_tap_hole(size: str, depth: float) -> Part:
+    """Глухое пилотное отверстие под винт, нарезающий резьбу в пластике сам (без вставки)."""
+    key = size.upper()
+    if key not in SELF_TAP_D:
+        raise ValueError(f"Пилот под {size} не описан, есть: {', '.join(SELF_TAP_D)}")
+    d = SELF_TAP_D[key]
+    return _down_cylinder(d, depth) + chamfer_ring(d, 0.3)
+
+
 def insert_hole(size: str, p: Profile, hole_d: float | None = None, length: float | None = None, extra: float = 1.0) -> Part:
     """Hole for a heat-set insert: the maker's diameter, depth = insert length + `extra` for displaced plastic.
 

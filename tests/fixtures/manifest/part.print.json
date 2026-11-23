@@ -1,0 +1,62 @@
+{
+ "checks": {
+  "base_warn": false,
+  "bodies_above_bed": 0,
+  "failed": false,
+  "islands": 0,
+  "overhang_warn": false,
+  "supports_suggested": false
+ },
+ "estimate": {
+  "grams": 14.2
+ },
+ "extra_future_field": {
+  "x": 1
+ },
+ "file": "lamp-arm.3mf",
+ "file_sha256": "7c60f0ea3da6b845423df529ad2c441b06d7bf514bc5ffeeefd822de536d5d5b",
+ "git_commit": "abc1234",
+ "hints": {
+  "infill_pattern": "gyroid",
+  "infill_pct": 25,
+  "material": "PETG",
+  "material_reason": "near a lamp",
+  "walls": 4
+ },
+ "kind": "part",
+ "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "name": "lamp-arm",
+ "plates": [
+  {
+   "index": 1,
+   "objects": [
+    {
+     "bbox_mm": [
+      60.0,
+      20.0,
+      12.5
+     ],
+     "name": "lamp-arm",
+     "volume_mm3": 9800.0
+    }
+   ]
+  }
+ ],
+ "print_ready": true,
+ "profile": {
+  "material": "PETG",
+  "nozzle_mm": 0.4,
+  "tolerances": {
+   "hole_mm": 0.2
+  }
+ },
+ "schema": 1,
+ "source": {
+  "git_commit": "abc1234",
+  "model_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "original_sha256": null,
+  "overrides": {
+   "WIDTH": "45"
+  }
+ }
+}

@@ -23,6 +23,7 @@ class Profile:
     press_fit_mm: float
     slide_fit_mm: float
     material_note: str
+    thread_clearance_mm: float = 0.35  # added to the major diameter of a printed internal thread
     density_g_cm3: float = 1.24      # filament density, for the weight estimate
     price_per_kg: float | None = None  # spool price; None — the report shows no cost
     currency: str = "UAH"
@@ -76,6 +77,7 @@ def load_profile(
         press_fit_mm=float(tol["press_fit_mm"]) + add,
         slide_fit_mm=float(tol["slide_fit_mm"]) + add,
         material_note=mat.get("note", ""),
+        thread_clearance_mm=float(tol.get("thread_clearance_mm", tol["slide_fit_mm"])) + add,
         density_g_cm3=float(mat.get("density_g_cm3", 1.24)),
         price_per_kg=float(mat["price_per_kg"]) if "price_per_kg" in mat else None,
         currency=str(data.get("estimate", {}).get("currency", "UAH")),

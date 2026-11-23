@@ -32,6 +32,7 @@ The first run after installing can take a few minutes on Windows while Defender 
 | `uv run cad.py check <file>` | checks of any STL, 3MF or STEP, someone else's too |
 | `uv run cad.py inspect <file>` | size, volume, bodies, base, flat faces |
 | `uv run cad.py orient <folder or file>` | best sides to print on: a table, a PNG of each and the `PRINT_DOWN` line to use |
+| `uv run cad.py kit <folder>` | a set of parts in one 3MF for Bambu Studio: every part its own object, turned with `PRINT_DOWN` on the bed, a plate each (as `<folder>/kit.py` lists them) |
 
 Build flags:
 - `--nozzle 0.6`, `--material petg`: another nozzle or plastic for one build.
@@ -75,7 +76,7 @@ If any **error** check fails, `build` exits with code 1.
 
 ## Tolerances and calibration
 
-Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print `calibration/` (`uv run cad.py build calibration`) and follow [the instructions](calibration/README.md).
+Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md).
 
 ## Layout
 
@@ -85,7 +86,7 @@ printer.toml        printer, nozzles, plastics, tolerances, filament estimate
 cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
-calibration/        tolerance sample
+calibration/        tolerance gauge; fit-test/ for fits against metal
 templates/          templates for new part / new remix
 multiclaude/        the add-in for the multiclaude Telegram bot
 tests/              pytest
@@ -95,9 +96,33 @@ tests/              pytest
 
 The workshop installs as an add-in for [multiclaude](https://github.com/korsicheg/multiclaude), a Telegram bot that gives each person their own Claude Code. Then a part can be ordered from the chat, and the assistant sends back the PNG preview and a print-ready 3MF. Setup is in [multiclaude/addon/README.md](multiclaude/addon/README.md). An Ubuntu server also needs `libgl1`; the add-in's `setup` installs it. On a weak laptop a build takes 10–60 s and up to 0.7 GB of memory, a downloaded model of a million triangles up to 1.2 GB.
 
+## Printing through bambu-mcp
+
+The workshop only prepares files. Slicing and printing are done by [bambu-mcp](https://github.com/Hustilin-Y/bambu-mcp), a separate project (a connector for Claude). The link between the two is a print manifest, `out/<name>.print.json` (schema version 1, UTF-8, sorted keys): the print-ready 3MF with its hash, the weight estimate, the material, nozzle and tolerances, the check results and the hints below.
+
+- It is written by `build --print-ready` and `kit` only. A plain `build` writes none and removes a stale one.
+- A build or kit whose checks fail writes no manifest.
+- A part may carry slicing hints in `model.py`; all keys are optional, any other key or value fails the build with a message naming the key:
+
+| Key | Values |
+|---|---|
+| `walls` | integer 1..10 |
+| `infill_pct` | integer 0..100 |
+| `infill_pattern` | `grid`, `gyroid`, `honeycomb`, `cubic`, `line`, `rectilinear`, `zig-zag`, `adaptivecubic`, `lightning` |
+| `supports` | `none`, `auto`, `tree`, `normal` |
+| `brim` | `none`, `auto`, `outer` |
+| `material` | a plastic described in `[materials.*]` of `printer.toml` |
+| `material_reason` | a string of at most 200 characters |
+
+```python
+PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
+```
+
+Claude never starts a print: the owner starts every print, outside the model. Without bambu-mcp, open the 3MF in Bambu Studio as before.
+
 ## What's not here
 
-No connection to the printer, no slicing, no downloading by link, no multi-colour (AMS). The scripts never go online; a test checks that.
+No connection to the printer, no slicing, no downloading by link, no multi-colour (AMS). The scripts never go online; a test checks that. Printing from a build is done by a separate project, see [Printing through bambu-mcp](#printing-through-bambu-mcp).
 
 ## Licence
 

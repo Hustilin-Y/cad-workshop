@@ -5,7 +5,7 @@ description: Designing parts for 3D printing from scratch and reworking other pe
 
 # CAD workshop: a part or a remix
 
-The printer is a Bambu Lab P2S; the user prints themselves through Bambu Studio. Our job is an accurate model that passes the checks, and the files in `out/`. Project rules are in `CLAUDE.md`, tolerances in `printer.toml`.
+The printer is a Bambu Lab P2S; the user prints through Bambu Studio, or through the bambu-mcp tools when they ask to print (see "What not to do"). Our job is an accurate model that passes the checks, and the files in `out/`. Project rules are in `CLAUDE.md`, tolerances in `printer.toml`.
 
 Every command runs from the project root as `uv run cad.py ...`.
 
@@ -21,7 +21,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 2. **Create the folder:** `uv run cad.py new part <name>`. Latin letters with hyphens: `phone-stand`, `hose-clip`.
 3. **Write `model.py`.**
    - Every size is a parameter at the top, commented in mm with where the value came from ("measured", "tolerance").
-   - Clearances only from the profile: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, and walls no thinner than `p.min_wall_mm`.
+   - Clearances only from the profile: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, `p.thread_clearance_mm` (printed nuts), and walls no thinner than `p.min_wall_mm`.
    - Fasteners only through `cadlib.fasteners`.
    - Add `_validate(p)` with clear errors, as in `parts/example-bracket/model.py`.
    - `build(p)` returns a build123d solid.
@@ -66,7 +66,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 
 ## Tolerance calibration
 
-If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`). How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
+If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
 ## Cheat sheet
 
@@ -77,7 +77,7 @@ from cadlib import mesh as m        # load_source, repair, subtract, add, inters
 from cadlib.text import label       # lettering: extrude(Pos(x, y, z) * label("M3", 4), amount=0.6); a bare Text breaks the mesh on Linux
 from cadlib.shared import load_module  # a sibling part's shared code: load_module(Path(__file__).parent.parent / "lamp-hanger" / "hanger.py")
 from cadlib.logo import place_logo  # the workshop logo on a flat face: raised or sunk
-from cadlib.threads import internal_thread_tube   # threads for printing
+from cadlib.threads import internal_thread_tube   # threads for printing; down=-1/+1: the side facing the bed gets a 45° flank
 from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
 ```
 
@@ -91,11 +91,12 @@ from cadlib.finish import soften, bevel           # roundings and chamfers that 
 - Orientation: `uv run cad.py orient <folder or file>` ranks the sides and writes a PNG for each; `build --print-ready` exports STL/3MF already turned with `PRINT_DOWN` on the bed.
 - The report's last line is the weight (and cost, if `price_per_kg` is set in `printer.toml`): mention it to the user.
 - After changes to `cadlib/`: `uv run cad.py build --all`.
+- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf` and `out/<name>.print.json` (the print manifest; copies are named `part#1`, `part#2`): each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. If a part fails its checks, the kit exits with code 1 and prints `KIT FAILED`, and no manifest is written. Hand the user this file.
 - Someone else's file without edits: `uv run cad.py check <file>` (`--down -y` if it prints on another side), `uv run cad.py inspect <file>`, `uv run cad.py preview <file> --section z`.
 
 ## What not to do
 
-- Don't connect to the printer, don't slice, don't touch Bambu Studio. Printing is the user's business.
+- CAD Workshop itself never connects to the printer or slices. When the owner asks to print, build with `--print-ready` (or `kit`) and hand the manifest `out/<name>.print.json` to bambu-mcp: call its `create_job` tool with the manifest's absolute path when the bambu-mcp service runs on this machine and allows this folder; when it runs elsewhere, run `uv run bambu-mcp upload <absolute path to the manifest> --url <service url>` in the bambu-mcp project (the token comes from the `BAMBU_MCP_TOKEN` environment variable; it prints the job id). Then `propose_job`, `slice_job`, `job_status`, `jobs`. Claude never starts a print and has no start tool: the owner starts every print (from Bambu Studio, or with the Telegram confirmation button once bambu-mcp has it). If the bambu-mcp tools are not available in this session, say so and hand over the 3MF as before (open it in Bambu Studio). A part's slicing wishes go into `PRINT_HINTS` in its model (keys in README, "Printing through bambu-mcp"). No automating GUIs (Bambu Studio and the like).
 - Don't add network calls: `test_no_network` catches them.
 - Don't invent fit sizes and don't hard-code clearances.
 - Don't pick the orientation for good: only suggest it, with the reasons.
