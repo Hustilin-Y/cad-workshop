@@ -8,6 +8,7 @@
   inspect <file>    size, volume, bodies, base, flat faces: before a remix
   orient <path>     best sides to print on, with PNGs and a PRINT_DOWN line
   build --all       build every part, remix and the calibration; one line each
+  kit <folder>      every part of a set in one 3MF, a plate each, as <folder>/kit.py lists them
 """
 
 from __future__ import annotations
@@ -79,6 +80,11 @@ def _parser() -> argparse.ArgumentParser:
     set_flag(p)
     profile_flags(p)
     p.set_defaults(func=cmd_build)
+
+    p = sub.add_parser("kit", help="every part of a set in one 3MF, plate by plate (from <folder>/kit.py)")
+    p.add_argument("path", type=Path, help="the folder with kit.py")
+    profile_flags(p)
+    p.set_defaults(func=cmd_kit)
 
     p = sub.add_parser("preview", help="only the preview")
     p.add_argument("path", type=Path)
@@ -469,7 +475,7 @@ def cmd_orient(args) -> int:
 def cmd_build_all(args) -> int:
     """Build every model folder with its own settings; print one line each and the failures in full."""
     folders = [ROOT / "calibration"] + sorted(
-        d for base in ("parts", "remix") for d in (ROOT / base).glob("*") if d.is_dir()
+        d for base in ("calibration", "parts", "remix") for d in (ROOT / base).glob("*") if d.is_dir()
     )
     folders = [d for d in folders if any((d / f).exists() for f in ENTRY_FILES)]
     if not folders:
@@ -513,6 +519,73 @@ def cmd_build_all(args) -> int:
     built = len(folders) - failed - skipped
     print(f"{built} of {len(folders)} built" + (f", {failed} failed" if failed else "") + (f", {skipped} skipped" if skipped else ""))
     return 1 if failed else 0
+
+
+def cmd_kit(args) -> int:
+    """Build each part of every kit in <folder>/kit.py, turn it as printed and write one 3MF per kit."""
+    import trimesh
+
+    from cadlib.export import plate_origin, shape_to_mesh, write_plates_3mf
+    from cadlib.orient import print_ready
+    from cadlib.preview import render_preview
+
+    t0 = time.perf_counter()
+    folder = args.path.resolve()
+    kit_file = folder / "kit.py"
+    if not kit_file.is_file():
+        raise UserError(f"no kit.py in {_rel(folder)}")
+    spec = importlib.util.spec_from_file_location(f"cadkit_{folder.name.replace('-', '_')}", kit_file)
+    kit_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(kit_module)
+    kits = getattr(kit_module, "KITS", None)
+    if not isinstance(kits, dict) or not kits:
+        raise UserError("kit.py needs KITS = {name: [plate, ...]}, a plate being [(part folder, count), ...]")
+    profile = _profile(args)
+    bed_xy = profile.build_volume_mm[:2]
+    out_dir = folder / "out"
+    out_dir.mkdir(exist_ok=True)
+    built: dict[Path, tuple[str, trimesh.Trimesh]] = {}
+
+    def part(rel: str) -> tuple[str, trimesh.Trimesh]:
+        """A part folder (relative to the kit's folder) built and turned as printed; each built once."""
+        path = (folder / rel).resolve()
+        if path not in built:
+            module = load_model(path)
+            result = run_model(module, profile)
+            mesh = result if isinstance(result, trimesh.Trimesh) else shape_to_mesh(result)
+            down = _print_down(getattr(module, "PRINT_DOWN", None), f"{_rel(path)}: PRINT_DOWN")
+            built[path] = (getattr(module, "NAME", path.name), print_ready(mesh, down) if down else mesh)
+        return built[path]
+
+    for kit_name, plate_list in kits.items():
+        plates = []
+        for plate in plate_list:
+            objects = []
+            for rel, count in plate:
+                name, mesh = part(rel)
+                objects += [(name if count == 1 else f"{name} {k + 1}", mesh) for k in range(count)]
+            plates.append(objects)
+        path = out_dir / f"{kit_name}.3mf"
+        try:
+            layouts = write_plates_3mf(plates, path, bed_xy, profile.bed_margin_mm)
+        except ValueError as e:
+            raise UserError(f"{kit_name}: {e}") from e
+        print(f"== {kit_name}: {len(plates)} plates, {sum(map(len, plates))} parts ({profile.printer}, {profile.material})")
+        placed = []
+        for n, (plate, centres) in enumerate(zip(plates, layouts)):
+            ox, oy = plate_origin(n, len(plates), bed_xy)
+            print(f"  plate {n + 1}: {', '.join(name for name, _ in plate)}")
+            for (_, mesh), (cx, cy) in zip(plate, centres):
+                m = mesh.copy()
+                lo, hi = m.bounds
+                m.apply_translation((ox + cx - (lo[0] + hi[0]) / 2, oy + cy - (lo[1] + hi[1]) / 2, -lo[2]))
+                placed.append(m)
+        print(f"  3MF  {_rel(path)}  {path.stat().st_size / 1024:.0f} KB")
+        png = render_preview(trimesh.util.concatenate(placed), out_dir / f"{kit_name}.png",
+                             f"{kit_name}: the plates as in the 3MF")
+        print(f"  PNG  {_rel(png)}")
+    print(f"Done in {time.perf_counter() - t0:.1f} s. Each part's own checks are in its build report (cad.py build).")
+    return 0
 
 
 # --- utilities --------------------------------------------------------------

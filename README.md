@@ -32,6 +32,7 @@ The first run after installing can take a few minutes on Windows while Defender 
 | `uv run cad.py check <file>` | checks of any STL, 3MF or STEP, someone else's too |
 | `uv run cad.py inspect <file>` | size, volume, bodies, base, flat faces |
 | `uv run cad.py orient <folder or file>` | best sides to print on: a table, a PNG of each and the `PRINT_DOWN` line to use |
+| `uv run cad.py kit <folder>` | a set of parts in one 3MF for Bambu Studio: every part its own object, turned with `PRINT_DOWN` on the bed, a plate each (as `<folder>/kit.py` lists them) |
 
 Build flags:
 - `--nozzle 0.6`, `--material petg`: another nozzle or plastic for one build.
@@ -75,7 +76,7 @@ If any **error** check fails, `build` exits with code 1.
 
 ## Tolerances and calibration
 
-Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print `calibration/` (`uv run cad.py build calibration`) and follow [the instructions](calibration/README.md).
+Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md).
 
 ## Layout
 
@@ -85,7 +86,7 @@ printer.toml        printer, nozzles, plastics, tolerances, filament estimate
 cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
-calibration/        tolerance sample
+calibration/        tolerance gauge; fit-test/ for fits against metal
 templates/          templates for new part / new remix
 multiclaude/        the add-in for the multiclaude Telegram bot
 tests/              pytest

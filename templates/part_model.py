@@ -27,7 +27,7 @@ def _validate(p) -> None:
 
 
 def build(p):
-    """p — the printer profile: p.hole_clearance_mm, p.slide_fit_mm, p.press_fit_mm, p.min_wall_mm, p.layer_mm."""
+    """p — the printer profile: p.hole_clearance_mm, p.slide_fit_mm, p.press_fit_mm, p.thread_clearance_mm, p.min_wall_mm, p.layer_mm."""
     _validate(p)
     body = Pos(0, 0, HEIGHT / 2) * Box(WIDTH, DEPTH, HEIGHT)
     return body

@@ -107,3 +107,11 @@ def test_user_errors(tmp_path, capsys):
     assert main(["build", str(ROOT / "calibration"), "--nozzle", "0.5"]) == 2
     out = capsys.readouterr().out
     assert "no such file" in out and "no model.py" in out and "nozzle 0.5" in out
+
+
+def test_build_fit_test_plate(capsys, repo_copy):
+    folder = repo_copy("calibration/fit-test")
+    assert main(["build", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert "FAIL" not in out and "WARN" not in out
+    assert "separate bodies: 4" in out

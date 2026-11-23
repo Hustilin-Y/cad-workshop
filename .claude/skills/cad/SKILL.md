@@ -21,7 +21,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 2. **Create the folder:** `uv run cad.py new part <name>`. Latin letters with hyphens: `phone-stand`, `hose-clip`.
 3. **Write `model.py`.**
    - Every size is a parameter at the top, commented in mm with where the value came from ("measured", "tolerance").
-   - Clearances only from the profile: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, and walls no thinner than `p.min_wall_mm`.
+   - Clearances only from the profile: `p.hole_clearance_mm`, `p.slide_fit_mm`, `p.press_fit_mm`, `p.thread_clearance_mm` (printed nuts), and walls no thinner than `p.min_wall_mm`.
    - Fasteners only through `cadlib.fasteners`.
    - Add `_validate(p)` with clear errors, as in `parts/example-bracket/model.py`.
    - `build(p)` returns a build123d solid.
@@ -66,7 +66,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 
 ## Tolerance calibration
 
-If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`). How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
+If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
 ## Cheat sheet
 
@@ -77,7 +77,7 @@ from cadlib import mesh as m        # load_source, repair, subtract, add, inters
 from cadlib.text import label       # lettering: extrude(Pos(x, y, z) * label("M3", 4), amount=0.6); a bare Text breaks the mesh on Linux
 from cadlib.shared import load_module  # a sibling part's shared code: load_module(Path(__file__).parent.parent / "lamp-hanger" / "hanger.py")
 from cadlib.logo import place_logo  # the workshop logo on a flat face: raised or sunk
-from cadlib.threads import internal_thread_tube   # threads for printing
+from cadlib.threads import internal_thread_tube   # threads for printing; down=-1/+1: the side facing the bed gets a 45° flank
 from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
 ```
 
@@ -91,6 +91,7 @@ from cadlib.finish import soften, bevel           # roundings and chamfers that 
 - Orientation: `uv run cad.py orient <folder or file>` ranks the sides and writes a PNG for each; `build --print-ready` exports STL/3MF already turned with `PRINT_DOWN` on the bed.
 - The report's last line is the weight (and cost, if `price_per_kg` is set in `printer.toml`): mention it to the user.
 - After changes to `cadlib/`: `uv run cad.py build --all`.
+- A set of several parts: a `kit.py` in the main part's folder, `KITS = {"name": [[("../other-part", 1)], [("../knob", 2)], ...]}` (a plate per list, folders relative to kit.py; copies of one part may share a plate), then `uv run cad.py kit <folder>` writes `out/<name>.3mf`: each part a separate object, turned with its `PRINT_DOWN` on the bed, on its own plate of a 256 mm bed grid as Bambu Studio lays it out. Hand the user this file.
 - Someone else's file without edits: `uv run cad.py check <file>` (`--down -y` if it prints on another side), `uv run cad.py inspect <file>`, `uv run cad.py preview <file> --section z`.
 
 ## What not to do
