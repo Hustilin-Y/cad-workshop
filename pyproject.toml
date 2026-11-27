@@ -24,6 +24,7 @@ viewer = [  # live 3D view, PC only: uv run --group viewer python -m ocp_viewer
 ]
 dev = [
     "pytest>=9.2.0",
+    "rtree>=1.4.1",
 ]
 
 [tool.uv]
