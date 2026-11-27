@@ -105,9 +105,27 @@ parts 2–4").
      but only for foreseen part types.
    - **Chosen: A as the base with 2 archetypes from B on top.**
 
+## Owner review of the cantilever (2026-11-27)
+
+- gaudi: good as built, keep.
+- hitech: good, but the plate lattice is invisible. The tri lattice moves to the large side face
+  (+Y, which faces up in print) as blind pockets or relief, where it is seen in use.
+- gothic and parametric: "missed the point", rework both.
+  - gothic becomes a **flying buttress**: the arm is carried by one pointed-arch strut springing
+    from the plate, nervure ribs in relief along the arch and the arm edge, chamfered edges. No
+    scattered small windows.
+  - parametric: hex cells fill the whole web following its outline, and the grading is clearly
+    visible (bars from `p.min_wall_mm` to about 4 × that, finest away from the load).
+- New fifth dialect **biomech** (sci-fi biomechanical look): several thin curved "tendon" strands
+  from the plate to the arm that fan out and merge smoothly at their ends, with open gaps between
+  them, plus a segmented "spine" of vertebra-like relief ribs along the arm, shrinking toward the
+  tip. Code and docs name it `biomech` and describe it in generic terms (no film or artist names).
+- Screw access: the large bay next to the plate is replaced by a minimal access that keeps the
+  web intact (keyhole slots in the plate, or narrow slots open on the +Y face).
+
 ## Decided by the owner
 
-- Dialects: gothic, gaudi, hitech, parametric.
+- Dialects: gothic, gaudi, hitech, parametric, and (added after review) biomech.
 - Hex grid is a must, available to all dialects, gradable.
 - Toolkit plus archetypes.
 - The hanger archetype is a kit of pieces with dovetail joints, not a single body.

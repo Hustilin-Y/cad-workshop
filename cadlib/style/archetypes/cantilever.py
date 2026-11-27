@@ -2,32 +2,33 @@
 
 Frame: the plate occupies -plate_t <= x <= 0 (its back, x = -plate_t, lies against the wall), the arm
 runs along +X at the top, z from 0 to `height`, the depth runs along Y centred on y = 0. The
-elevation lives in Plane.XZ (u = X, v = Z), so every opening and lattice cell is a through-cut along Y.
+elevation lives in Plane.XZ (u = X, v = Z), so every void and lattice cell is a through-cut along Y.
 
-The screws go through the plate along X. Their heads sit on the plate's front face inside a "bay",
-an opening that leaves the plate's face bare around them, so each head can be reached from the front.
+Mounting: keyhole slots in the plate. The screws are set in the wall first, their heads pass the
+round entries on the plate's back and the bracket slides down onto them. The heads ride in a channel
+inside the plate, so the bracing in front of the plate stays whole and needs no driver access.
 
 Print orientations: "-y" (default) lies the elevation on the bed, every cut is vertical and the load
-acts in the layer plane. "-x" stands the bracket on its wall plate: openings then turn their point to
-+X with a 45 degree cap, and a void between members is filled under its roof down to a 45 degree tent.
+acts in the layer plane. "-x" stands the bracket on its wall plate: a void between members is then
+filled under its roof down to a 45 degree tent, holes get a 45 degree cap and pockets keep flat-top roofs.
 
 Rules of thumb (part 1 has no load calculation): the arm tapers by the dialect's ratio, the bracing
-meets the arm at 0.8-0.9 of the reach, bars around openings are max(3 x min_wall, root_t / 2).
+meets the arm at 0.75-0.9 of the reach, relief ribs are 2 x min_wall wide.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 import numpy as np
-from build123d import Compound, Edge, Face, Plane, Pos, Rot, Solid, Vector, Wire, extrude, fillet
+from build123d import Box, Compound, Cylinder, Edge, Face, Kind, Plane, Pos, Rot, Solid, Vector, Wire, extrude, fillet, offset
 
 from cadlib import fasteners
 from cadlib.config import Profile
 from cadlib.style.archetypes.types import Archetype, Load, Support, Tunable
 from cadlib.style.dialects import Dialect, edge_size, finish_extrusion, get_dialect
-from cadlib.style.lattice import _inside, _point_seg_dist, _segments, lattice
+from cadlib.style.lattice import LatticeCut, _segments, lattice
 from cadlib.style.log import note
 from cadlib.style.members import catenary, curved_beam, rib, truss
 from cadlib.style.outline import Point, arch, clip_roof, to_face
@@ -40,25 +41,31 @@ GAUDI_BRACE_AT = 0.8       # the catenary brace meets the arm at this share of t
 GAUDI_BRACE_ROOT = 1.6     # brace width at the plate / root_t
 GAUDI_SAG = 0.1            # brace sag / chord length
 GAUDI_DROOP = 0.08         # the arm's tip droops by this share of the reach
+GOTHIC_STRUT_TO = 0.75     # the pointed-arch strut meets the arm's underside at this share of the reach
+GOTHIC_STRUT_W = 0.8       # strut width / root_t
 HITECH_NODES_AT = (0.5, 0.9)
 HITECH_BAR = 0.3           # truss bar / root_t (floored at 2 x min_wall)
 HITECH_NODE = 2.5          # node disc diameter / bar
-HITECH_TRI_CELL = 6.0      # plate lattice triangle side / min_wall
-WEB_TO = 0.9               # gothic and parametric webs meet the arm at this share of the reach
-PARAM_SAG = 0.08           # parametric lower chord sag / chord length
-PARAM_HEX_CELL = 6.0       # hex pitch / min_wall
-PARAM_BAR_MAX = 3.0        # thickest hex bar / min_wall
-RIB_HEIGHT_LAYERS = 6
+HITECH_TRI_CELL = 6.0      # arm pocket triangle side / min_wall
+HITECH_POCKET = 1 / 3      # pocket depth / bracket depth
+WEB_TO = 0.9               # the parametric web meets the arm at this share of the reach
+PARAM_SAG = 0.08           # parametric web underside sag / chord length
+PARAM_HEX_CELL = 6.5       # hex pitch / min_wall
+PARAM_BAR_MAX = 4.0        # thickest hex bar (at the plate-arm corner) / min_wall
+PARAM_BORDER = 2.0         # solid border round the hex field / min_wall
+BIO_STRANDS_TO = (0.3, 0.5, 0.7, 0.88)  # where the tendons meet the arm, share of the reach
+BIO_ROOT_GAP = 2.5         # gap between tendon roots on the plate / min_wall
+BIO_SAG = 0.14             # tendon bow / chord length
+BIO_ROOT_W = 0.45          # tendon width at the plate / root_t
+BIO_VERTEBRA = 0.08        # first vertebra pitch / reach
+BIO_SHRINK = 0.92          # each vertebra pitch is this share of the one before
+RIB_WIDTH_WALLS = 2        # relief rib width / min_wall
+RIB_HEIGHT_LAYERS = 15     # relief rib height / layer
 THIN_EDGE = 0.45           # an edge finish is at most this share of the thinnest member
-BAY_SPAN = 0.18            # bay width (across the plate face's normal) / reach, upright layout
-TRACERY_MAX = 3            # gothic: arches beside the bay
-TRACERY_STEP = 0.8         # each arch at most this share of the one before
-TRACERY_MIN = 5.0          # smallest arch span / min_wall
-GOTHIC_COVE = 0.06         # the web's underside bulges this share of its chord towards the corner
 
 _SQRT3 = math.sqrt(3.0)
 _ROOF_DEG = 46.0  # roofs are clipped a degree steeper than the 45 degree limit, clear of rounding noise
-_SMOOTH_DEG = 12.0  # a sampled curve turns less than this per point; a corner turns more
+_RIB_MAX_SLOPE = 0.69  # standing up, a relief rib stops where its path runs flatter than ~46 degrees
 _XZ = Plane.XZ
 
 
@@ -87,8 +94,7 @@ class _Frame:
     eye_r: float           # radius of the round eye at the tip, 0 when the arm is thick enough itself
     arm_end: float         # x where the arm's straight part ends (the eye's centre when there is one)
     tip_at: Point          # tip hole centre (or the tip's middle)
-    keep_r: float          # keep-out radius around a screw
-    margin: float          # bar left around openings
+    keep_r: float          # keep-out radius round a screw: (hole + 4 x min_wall) / 2
     edge: float            # dialect edge size used by finish_extrusion
 
     @property
@@ -107,6 +113,10 @@ class _Frame:
     def t0(self) -> float:
         return self.spec.root_t
 
+    @property
+    def rib_w(self) -> float:
+        return RIB_WIDTH_WALLS * self.p.min_wall_mm
+
     def arm_t(self, x: float) -> float:
         return self.t0 + (self.tip_t - self.t0) * min(max(x / self.arm_end, 0.0), 1.0)
 
@@ -114,10 +124,30 @@ class _Frame:
 @dataclass
 class _Elevation:
     solid: Face                      # the elevation with its inherent voids (members fused)
-    openings: list[list[Point]]      # cut-outs in (x, z), already printable for `up`
     thin: float                      # the thinnest member: edge finishes stay below half of it
-    web: Face | None = None          # the region bays and lattices fit into
-    bay: list[Point] | None = None
+    web: Face | None = None          # the region a web lattice fills (parametric)
+    ribs: list[list[Point]] = field(default_factory=list)  # relief rib paths on the +Y face, in (x, z)
+    vertebrae: list[tuple[float, float]] = field(default_factory=list)  # (x, width) of spine segments
+
+
+@dataclass(frozen=True)
+class _Keyhole:
+    """A keyhole slot in the plate: the screw's shank ends at z, the head enters `slide` lower."""
+
+    z: float
+    slot_w: float          # shank slot through the plate's back layer
+    head_r: float          # entry and channel half width
+    back: float            # plate layer behind the head (against the wall)
+    front: float           # x of the channel's front face
+    slide: float           # travel from the entry up to the shank's stop
+
+    @property
+    def z_lo(self) -> float:
+        return self.z - self.slide - self.head_r
+
+    @property
+    def z_hi(self) -> float:
+        return self.z + self.head_r
 
 
 def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "-y") -> Archetype:
@@ -128,44 +158,43 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     _validate(spec, p)
     g = _frame(spec, p, dialect, print_down)
 
-    elev = {"gothic": _gothic, "gaudi": _gaudi, "hitech": _hitech, "parametric": _parametric}[style](g)
-    if g.up is None:
-        voids: list[Face] = []
-    else:
-        voids = [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
-    open_faces = [_poly(pts) for pts in elev.openings]
-    screws_z = _place_screws(g, elev, voids)
-    keepouts = [_keepout(g, z) for z in screws_z]
-    for pts in elev.openings:
-        _check_keepouts(pts, screws_z, g.keep_r)
+    keys = _keyholes(g)
+    keepouts = [_poly(_keyhole_footprint(g, k, p.min_wall_mm)) for k in keys]
+    elev = _BUILDERS[style](g)
+    # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the open.
+    bosses = [_poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True)) for k in keys if k.front > -p.min_wall_mm]
+    if bosses:
+        elev = replace(elev, solid=_trim(_fuse([elev.solid, *bosses]), g))
+    voids = [] if g.up is None else [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
 
-    # Body: in the flat layout the voids and openings are finished with the outline; standing up,
-    # their roofs keep a sharp 45 degree apex, so they are cut after the finish.
     edge = min(g.edge, THIN_EDGE * elev.thin)
     if edge < g.edge:
         note("cantilever", f"{style}: edge {g.edge:.1f} mm shrunk to {edge:.1f} mm, thinnest member {elev.thin:.1f} mm", "info")
+    # Lying down the voids are finished with the outline. Standing up their tent roofs keep a sharp
+    # apex, so they are cut after the finish.
     if g.up is None:
-        face = elev.solid
-        for f in open_faces:
-            face = face - f
-        body = finish_extrusion(_extrude(_round_corners(face, g, edge), spec.depth), dialect, spec.depth, print_down, p, edge)
+        face = _round_corners(elev.solid, g, edge)
+        body = finish_extrusion(_extrude(face, spec.depth), dialect, spec.depth, print_down, p, edge)
     else:
         envelope = _round_corners(Face(elev.solid.outer_wire()), g, edge)
         body = finish_extrusion(_extrude(envelope, spec.depth), dialect, spec.depth, print_down, p, edge)
-        cuts = voids + open_faces
-        if cuts:
-            body = _one(body - _extrude(Compound(cuts), spec.depth + 2))
+        if voids:
+            body = _one(body - _extrude(Compound(voids), spec.depth + 2))
 
-    if style == "parametric":
-        body = _parametric_lattice(g, elev, body, keepouts, print_down)
-    if style == "hitech":
-        body = _plate_lattice(g, body, screws_z, keepouts, print_down)
-    for z in screws_z:
-        body = _one(body - _screw_tool(g, z, print_down))
+    cut = _lattice_cut(g, elev, keepouts, print_down, edge)
+    if cut is not None and cut.tool is not None:
+        body = _one(body - _lattice_tool(g, cut))
+    for k in keys:
+        body = _one(body - _keyhole_tool(g, k, print_down))
     if spec.tip_hole is not None:
         body = _one(body - _tip_tool(g))
-    if dialect.relief_ribs and elev.bay is not None:
-        body = _one(body + _relief_rib(g, elev.bay))
+    if dialect.relief_ribs:
+        for path in elev.ribs:
+            body = _one(body + _rib_solid(g, path, g.rib_w))
+        if elev.vertebrae:
+            body = _one(body + _spine_cord(g, elev.vertebrae))
+        for x, w in elev.vertebrae:
+            body = _one(body + _vertebra(g, x, w, edge))
 
     return Archetype(
         solid=body,
@@ -197,9 +226,9 @@ def _validate(spec: CantileverSpec, p: Profile) -> None:
         raise ValueError(f"reach {spec.reach:g} x height {spec.height:g} mm is too small for root_t {spec.root_t:g} mm")
     if spec.screw_count < 1:
         raise ValueError("the cantilever needs at least one screw")
-    hole = _hole_d(spec.screw, p)
-    if spec.depth < hole + 4 * p.min_wall_mm:
-        raise ValueError(f"depth {spec.depth:g} mm leaves no wall around a {hole:g} mm screw hole")
+    head = fasteners.metric(spec.screw).head_d + 2 * p.slide_fit_mm
+    if spec.depth < head + 4 * p.min_wall_mm:
+        raise ValueError(f"depth {spec.depth:g} mm leaves no wall round a {head:g} mm keyhole for the {spec.screw} head")
 
 
 def _hole_d(size: str, p: Profile) -> float:
@@ -223,7 +252,6 @@ def _frame(spec: CantileverSpec, p: Profile, d: Dialect, print_down: str) -> _Fr
     g = _Frame(
         spec=spec, p=p, d=d, up=up, tip_t=tip_t, eye_r=eye_r, arm_end=arm_end, tip_at=(0.0, 0.0),
         keep_r=(_hole_d(spec.screw, p) + 4 * p.min_wall_mm) / 2,
-        margin=max(3 * p.min_wall_mm, spec.root_t / 2),
         edge=edge_size(d, spec.depth, p),
     )
     if d.name == "gaudi":
@@ -238,10 +266,10 @@ def _frame(spec: CantileverSpec, p: Profile, d: Dialect, print_down: str) -> _Fr
 # --- 2D helpers -----------------------------------------------------------------------------------
 
 
-def _poly(pts: list[Point]) -> Face:
+def _poly(pts: list[Point], smooth_deg: float = 12.0) -> Face:
     """Planar face of an (x, z) outline, wound so its normal is +Y like the members' faces (they fuse).
 
-    Runs of points that turn by less than _SMOOTH_DEG per vertex become one spline, so a sampled
+    Runs of points that turn by less than smooth_deg per vertex become one spline, so a sampled
     arch is a few smooth edges an edge finish can follow, not dozens of facets.
     """
     area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))
@@ -251,7 +279,7 @@ def _poly(pts: list[Point]) -> Face:
     long = 2.5 * float(np.median(seg))  # a straight run (a jamb) between sampled curves stays a line
     corners = [
         i for i in range(n)
-        if _corner(pts[i - 1], pts[i], pts[(i + 1) % n]) > _SMOOTH_DEG or max(seg[i - 1], seg[i]) > long
+        if _corner(pts[i - 1], pts[i], pts[(i + 1) % n]) > smooth_deg or max(seg[i - 1], seg[i]) > long
     ]
     if len(corners) < 2:
         return to_face(pts)
@@ -312,21 +340,6 @@ def _pts_of(shape, plane: Plane = _XZ) -> Segs:
     return _segments(shape, plane)
 
 
-def _fits(pts: np.ndarray, region: Segs, margin: float, skip_plate: bool = True) -> bool:
-    """All points inside `region` (its boundary segments) and at least `margin` from that boundary.
-
-    With skip_plate the plate face (x = 0) does not count: a bay may rest on it.
-    """
-    a, b = region
-    probe = pts.copy()
-    probe[:, 0] = np.maximum(probe[:, 0], 1e-3)
-    if not _inside(probe, a, b).all():
-        return False
-    if skip_plate:
-        keep = (np.abs(a[:, 0]) > 1e-3) | (np.abs(b[:, 0]) > 1e-3)
-        a, b = a[keep], b[keep]
-    return bool(_point_seg_dist(pts, a, b).min() >= margin)
-
 
 def _turn(pts: list[Point], up: Point) -> list[Point]:
     """Turn points whose apex is +v so that it points along `up`."""
@@ -337,75 +350,6 @@ def _turn(pts: list[Point], up: Point) -> list[Point]:
 
 def _shift(pts: list[Point], at: Point) -> list[Point]:
     return [(u + at[0], v + at[1]) for u, v in pts]
-
-
-def _head(kind: str, span: float) -> float:
-    return span * _SQRT3 / 2 if kind == "pointed" else 0.6 * span
-
-
-def _lancet(kind: str, span: float, jamb: float) -> list[Point]:
-    """Window outline: base on v = 0 centred on u = 0, vertical jambs, an arched head, apex +v (ccw)."""
-    h = span / 2
-    return [(h, 0.0)] + [(u, v + jamb) for u, v in arch(kind, span, _head(kind, span), n=32)] + [(-h, 0.0)]
-
-
-def _place(local: list[Point], up: Point | None, at: Point) -> list[Point]:
-    """Local outline (apex +v) placed at `at`: upright when the elevation lies flat, else turned to `up` and clipped."""
-    if up is None:
-        return _shift(local, at)
-    return _shift(clip_roof(_turn(local, up), up, _ROOF_DEG), at)
-
-
-def _bay(g: _Frame, web: Face, kind: str) -> list[Point]:
-    """The screw bay: a window whose base or jamb lies on the plate face, fitted into the web."""
-    segs = _pts_of(web)
-    spans = [g.R * BAY_SPAN * f for f in (1.0, 0.85, 0.7)] if g.up is None else []
-    if g.up is None:
-        for span in spans:
-            rise = _head(kind, span)
-            for sill in np.arange(g.margin, g.H, 1.0):
-                top = g.H - g.t0 - g.margin
-                jamb = top - sill - rise
-                if jamb < 2 * g.keep_r:
-                    break
-                pts = _place(_lancet(kind, span, jamb), None, (span / 2, sill))
-                if _fits(np.array(pts), segs, g.margin):
-                    return pts
-    else:
-        # Standing up: the window rests its base on the plate face and points to +X.
-        jamb = 2 * g.keep_r
-        for span in np.arange(0.7 * (g.H - g.t0), 4 * g.keep_r, -2.0):
-            for z0 in np.arange(g.margin, g.H - span, 1.0):
-                pts = _place(_lancet(kind, span, jamb), g.up, (0.0, z0 + span / 2))
-                if _fits(np.array(pts), segs, g.margin):
-                    return pts
-    raise ValueError(f"no room for the screw bay in the {g.d.name} web: make the bracket taller or longer")
-
-
-def _base_last(pts: list[Point], standing: bool) -> list[Point]:
-    """Roll a bay outline so that its base closes it: the sill (lying flat) or the plate face (standing)."""
-    a = np.array(pts)
-    n = len(a)
-    col, at = (0, 0.0) if standing else (1, a[:, 1].min())
-    for i in range(n):
-        if abs(a[i, col] - at) < 1e-6 and abs(a[(i + 1) % n, col] - at) < 1e-6:
-            return pts[i + 1 :] + pts[: i + 1]
-    raise ValueError("bay outline has no base edge")
-
-
-def _offset_open(pts: list[Point], dist: float) -> list[Point]:
-    """Offset an open polyline of a ccw outline outward by `dist` (mitred corners)."""
-    a = np.array(pts)
-    d = np.diff(a, axis=0)
-    d /= np.linalg.norm(d, axis=1)[:, None]
-    nrm = np.stack([d[:, 1], -d[:, 0]], axis=1)  # right of the travel = outside of a ccw outline
-    out = [a[0] + nrm[0] * dist]
-    for i in range(1, len(a) - 1):
-        m = nrm[i - 1] + nrm[i]
-        m *= dist / max(1.0 + float(nrm[i - 1] @ nrm[i]), 1e-6)
-        out.append(a[i] + m)
-    out.append(a[-1] + nrm[-1] * dist)
-    return [(float(u), float(v)) for u, v in out]
 
 
 def _printable_void(void: Face, up: Point) -> list[Face]:
@@ -439,104 +383,60 @@ def _printable_void(void: Face, up: Point) -> list[Face]:
 # --- dialects -------------------------------------------------------------------------------------
 
 
-def _web_end(g: _Frame) -> float:
-    """Where a web meets the arm: WEB_TO of the reach, but clear of the eye so the corners finish apart."""
-    return min(WEB_TO * g.R, g.arm_end - g.eye_r - 4 * g.edge)
-
-
 def _gothic(g: _Frame) -> _Elevation:
-    xe = _web_end(g)
-    # The web's underside is a shallow cove (bulging towards the plate-arm corner), like a corbel.
-    z_end = g.H - g.arm_t(xe)
-    chord = math.hypot(xe, z_end)
-    nx, nz = -z_end / chord, xe / chord
-    under = [
-        (xe * t + nx * GOTHIC_COVE * chord * 4 * t * (1 - t), z_end * t + nz * GOTHIC_COVE * chord * 4 * t * (1 - t))
-        for t in np.linspace(0, 1, 17)
-    ]
-    web = _poly(under + [(0.0, g.H - g.t0)])
-    x0 = -g.pt / 2
-    arm_web = _poly([(x0, g.H), (g.arm_end, g.H), (g.arm_end, g.H - g.tip_t)] + under[::-1] + [(x0, 0.0)])
-    solid = _trim(_fuse([_plate(g), arm_web, *_eye(g)]), g)
-    bay = _bay(g, web, "pointed")
-    openings = [bay] + _tracery(g, web, bay)
-    if len(openings) == 1:
-        note("cantilever", "gothic: no room for a second arch in the web, left out")
-    return _Elevation(solid, openings, min(g.pt, g.tip_t), web, bay)
+    """A flying buttress: one pointed-arch strut springing level from the plate's foot to the arm.
 
-
-def _tracery(g: _Frame, web: Face, bay: list[Point]) -> list[list[Point]]:
-    """Pointed arches filling the web beside the bay, each the largest that fits the roomiest gap left.
-
-    Each is at most TRACERY_STEP of the one before, so the openings diminish towards the tip.
+    The strut's intrados is one leg of a pointed arch: a circle centred on the plate face, so it
+    leaves the plate square to it and meets the arm's underside at an angle, the arch's point.
+    Nervure ribs run along the intrados and along the arm's lower edge on the +Y face.
     """
-    segs = _pts_of(web)
-    placed = [np.array(bay)]
-    width = np.ptp(placed[0][:, 0]) if g.up is None else np.ptp(placed[0][:, 1])
-    gx, gz = np.meshgrid(np.arange(0, g.R, 1.5), np.arange(0, g.H, 1.5))
-    grid = np.stack([gx.ravel(), gz.ravel()], axis=1)
-    out: list[list[Point]] = []
-    span = width
-    for _ in range(TRACERY_MAX):
-        free = web
-        for pts in placed:
-            free = free - _poly(_grow([(float(u), float(v)) for u, v in pts], g.margin))
-        faces = free.faces() if free is not None else []
-        if not faces:
-            break
-        c = max(faces, key=lambda f: f.area).center()
-        found = _largest_arch(g, segs, placed, grid, TRACERY_STEP * span, np.array([c.X, c.Z]))
-        if found is None:
-            break
-        span, pts = found
-        placed.append(pts)
-        out.append([(float(u), float(v)) for u, v in pts])
-    return out
+    w = max(GOTHIC_STRUT_W * g.t0, 2 * g.p.min_wall_mm)
+    z_f = w  # the strut's extrados reaches z = 0 at the plate
+    xe = GOTHIC_STRUT_TO * g.R
+    ze = g.H - g.arm_t(xe)
+    rise = ze - z_f
+    rho = (xe * xe + rise * rise) / (2 * rise)
+    cz = z_f + rho
+
+    def at(r: float, phi: float) -> Point:
+        return (r * math.cos(phi), cz + r * math.sin(phi))
+
+    # The extrados runs on until it is well inside the arm, so the strut lands on it full width.
+    phi_end = -math.pi / 2
+    while at(rho + w, phi_end)[1] < g.H - g.arm_t(at(rho + w, phi_end)[0]) + g.arm_t(xe) / 2:
+        phi_end += math.radians(0.5)
+    phis = np.linspace(-math.pi / 2, phi_end, 24)
+    strut = _poly(
+        [(-g.pt / 2, 0.0)] + [at(rho + w, f) for f in phis] + [at(rho, f) for f in phis[::-1]] + [(-g.pt / 2, z_f)]
+    )
+    solid = _trim(_fuse([_plate(g), _arm(g), strut, *_eye(g)]), g)
+
+    off = g.edge + g.rib_w / 2 + 0.2  # a rib stays clear of the edge chamfer
+    x_start = -g.pt + g.edge + g.rib_w / 2 + 0.2
+    intrados = [(x_start, z_f - off)]
+    for f in np.linspace(-math.pi / 2, phi_end, 48):
+        x, z = at(rho + off, f)
+        if z + g.rib_w / 2 > g.H - g.arm_t(x) - off:
+            break  # reached the arm: its own rib takes over
+        if g.up is not None and abs(math.cos(f)) > _RIB_MAX_SLOPE:
+            break  # standing up, the rest of the arc would hang out flatter than 45 degrees
+        intrados.append((x, z))
+    x_end = g.arm_end - g.eye_r - g.rib_w
+    arm_rib = [(x_start, g.H - g.t0 + off), (x_end, g.H - g.arm_t(x_end) + off)]
+    ribs = [arm_rib] + ([intrados] if len(intrados) > 2 else [])
+    return _Elevation(solid, min(g.pt, g.tip_t, w), ribs=ribs)
 
 
-def _largest_arch(g: _Frame, segs: Segs, placed: list[np.ndarray], grid: np.ndarray, span_max: float, target: np.ndarray):
-    """(span, outline) of the largest pointed arch up to span_max that fits, nearest `target`; None if none fits."""
-    a, b = segs
-    # A cheap first cut per span: the arch's middle must lie deep enough inside the web.
-    for span in np.arange(span_max, TRACERY_MIN * g.p.min_wall_mm, -1.5):
-        local = np.array(_place(arch("pointed", span, span * _SQRT3 / 2, n=20), g.up, (0.0, 0.0)))
-        mid = local.mean(axis=0)
-        reach = np.linalg.norm(local - mid, axis=1).min()  # the arch's middle is this far inside its outline
-        near = _inside(grid + mid, a, b)
-        near[near] = _point_seg_dist(grid[near] + mid, a, b).min(axis=1) >= g.margin + reach
-        if not near.any():
-            continue
-        cand = grid[near][:, None, :] + local[None]  # (N, k, 2)
-        n, k, _ = cand.shape
-        flat = cand.reshape(-1, 2)
-        ok = _inside(flat, a, b).reshape(n, k).all(axis=1)
-        if not ok.any():
-            continue
-        sub = flat.reshape(n, k, 2)[ok].reshape(-1, 2)
-        clear = _point_seg_dist(sub, a, b).min(axis=1).reshape(-1, k).min(axis=1) >= g.margin
-        for pts in placed:
-            pa, pb = pts, np.roll(pts, -1, axis=0)
-            clear &= _point_seg_dist(sub, pa, pb).min(axis=1).reshape(-1, k).min(axis=1) >= g.margin
-            clear &= ~_inside(sub.reshape(-1, k, 2)[:, 0], pa, pb)
-        if not clear.any():
-            continue
-        fits = cand[ok][clear]
-        best = fits[np.argmin(np.linalg.norm(fits.mean(axis=1) - target, axis=1))]
-        return span, best
-    return None
-
-
+# The gaudi arm keeps its own builder instead of members.curved_beam: curved_beam makes both sides
+# splines, and the 3D rounding along a spline top tessellated into a sliver triangle that the strict
+# overhang check counted. An arc top rounds into a torus, which tessellates cleanly.
 def _gaudi_top_circle(g: _Frame) -> tuple[float, float, float]:
-    """(cx, cz, r) of the arc the gaudi arm's top follows: level at the plate, drooping to the tip.
-
-    A true arc, not a spline: the top rounding along it is a torus, which tessellates cleanly.
-    """
+    """(cx, cz, r) of the arc the gaudi arm's top follows: level at the plate, drooping to the tip."""
     droop = GAUDI_DROOP * g.R
     x0, x1 = -g.pt, g.arm_end
-    cx = x0
     # Centre straight below the plate end, so the arc leaves the plate level: r^2 = (x1-x0)^2 + (r-droop)^2.
     r = ((x1 - x0) ** 2 + droop**2) / (2 * droop)
-    return cx, g.H - r, r
+    return x0, g.H - r, r
 
 
 def _gaudi_top(g: _Frame, x: float) -> float:
@@ -571,7 +471,8 @@ def _gaudi(g: _Frame) -> _Elevation:
     # The plate stops inside the arm, whose arc top then runs on from the plate's back without a step.
     plate = _poly([(-g.pt, 0), (0, 0), (0, g.H - g.t0 / 2), (-g.pt, g.H - g.t0 / 2)])
     solid = _trim(_fuse([plate, arm, brace, *_eye(g)]), g)
-    return _Elevation(solid, [], min(g.pt, g.tip_t, widths[-1]))
+    return _Elevation(solid, min(g.pt, g.tip_t, widths[-1]))
+
 
 
 def _hitech(g: _Frame) -> _Elevation:
@@ -581,69 +482,198 @@ def _hitech(g: _Frame) -> _Elevation:
     nodes = [(0.0, bar), (0.0, g.H - g.t0)] + [(f * g.R, g.H - g.arm_t(f * g.R) - bar / 2) for f in HITECH_NODES_AT]
     frame = truss(nodes, [(0, 2), (0, 3)], bar, node_d, p=g.p)
     solid = _trim(_fuse([_plate(g), _arm(g), frame, _disc(nodes[1], node_d / 2), *_eye(g)]), g)
-    return _Elevation(solid, [], min(g.pt, g.tip_t, bar))
+    return _Elevation(solid, min(g.pt, g.tip_t, bar))
 
 
 def _parametric(g: _Frame) -> _Elevation:
-    xe = _web_end(g)
-    s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe) / 2)
+    """A web under a sagging spline, its whole field perforated by a graded hex lattice."""
+    xe = min(WEB_TO * g.R, g.arm_end - g.eye_r - 4 * g.edge)
+    s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe))
     chord = math.hypot(e[0] - s[0], e[1] - s[1])
-    centre = catenary(s, e, PARAM_SAG * chord, n=12)
-    widths = list(np.linspace(g.t0, max(0.7 * g.t0, 2 * g.p.min_wall_mm), len(centre)))
-    beam = curved_beam(centre, widths, p=g.p)
-    fill = _poly(centre + [(xe, g.H - 0.5), (s[0], g.H - 0.5)])
-    solid = _trim(_fuse([_plate(g), _arm(g), beam, fill, *_eye(g)]), g)
-    # The web the lattice and the bay fit into: above the chord, below the arm, in front of the plate.
-    web = fill - beam - _arm(g) - _plate(g)
-    web_faces = web.faces()
-    web = max(web_faces, key=lambda f: f.area)
-    bay = _bay(g, web, "oval")
-    return _Elevation(solid, [bay], min(g.pt, g.tip_t, widths[-1]), web, bay)
+    under = catenary(s, e, PARAM_SAG * chord, n=16)
+    fill = _poly(under + [(xe, g.H - 0.5), (s[0], g.H - 0.5)])
+    solid = _trim(_fuse([_plate(g), _arm(g), fill, *_eye(g)]), g)
+    web = max((fill - _arm(g) - _plate(g)).faces(), key=lambda f: f.area)
+    return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
-# --- screws, holes, lattices, ribs ----------------------------------------------------------------
+def _biomech(g: _Frame) -> _Elevation:
+    """Tendons fanning from a common root on the plate to the arm, and a segmented spine along the arm.
+
+    The lowest root runs to the farthest point, so the strands never cross; each bows outwards, which
+    opens gaps that widen from the plate. The 2D rounding (the full dialect edge in every concave
+    corner) merges their ends smoothly into the plate and the arm.
+    """
+    w_root = max(2 * g.p.min_wall_mm, BIO_ROOT_W * g.t0)
+    w_end = 2 * g.p.min_wall_mm * 1.05
+    strands = []
+    for i, f in enumerate(reversed(BIO_STRANDS_TO)):
+        p0 = (-g.pt / 2, w_root / 2 + i * (w_root + BIO_ROOT_GAP * g.p.min_wall_mm))
+        x2 = f * g.R
+        p2 = (x2, g.H - g.arm_t(x2) / 2)
+        dx, dz = p2[0] - p0[0], p2[1] - p0[1]
+        p1 = ((p0[0] + p2[0]) / 2 + BIO_SAG * dz, (p0[1] + p2[1]) / 2 - BIO_SAG * dx)  # bowed down and out
+        ts = np.linspace(0, 1, 14)
+        centre = [
+            (float((1 - t) ** 2 * p0[0] + 2 * t * (1 - t) * p1[0] + t * t * p2[0]),
+             float((1 - t) ** 2 * p0[1] + 2 * t * (1 - t) * p1[1] + t * t * p2[1]))
+            for t in ts
+        ]
+        strands.append(curved_beam(centre, list(np.linspace(w_root, w_end, len(ts))), p=g.p))
+    solid = _trim(_fuse([_plate(g), _arm(g), *strands, *_eye(g)]), g)
+
+    vertebrae = []
+    x, pitch = 2 * g.edge + g.p.min_wall_mm, BIO_VERTEBRA * g.R
+    while x < g.arm_end - g.eye_r - g.p.min_wall_mm and pitch >= 2 * g.p.min_wall_mm:
+        vertebrae.append((x, max(g.p.min_wall_mm, 0.4 * pitch)))
+        x += pitch
+        pitch *= BIO_SHRINK
+    return _Elevation(solid, min(g.pt, g.tip_t, w_end), vertebrae=vertebrae)
 
 
-def _place_screws(g: _Frame, elev: _Elevation, voids: list[Face]) -> list[float]:
-    """Screw heights on the plate face: spread over the room the bay (or the void at the plate) leaves."""
-    if elev.bay is not None:
-        room = [_poly(elev.bay)]
-    elif voids:
-        room = voids
-    else:
-        room = [Face(w) for w in elev.solid.inner_wires()]
-    angles = np.radians(np.linspace(-80, 80, 17))
-    best: tuple[float, float] | None = None
-    for region in room:
-        segs = _pts_of(region)
-        ok = []
-        for z in np.arange(0.0, g.H, 0.5):
-            head = np.stack([g.keep_r * np.cos(angles), z + g.keep_r * np.sin(angles)], axis=1)
-            head[:, 0] = np.maximum(head[:, 0], 0.05)
-            if _inside(head, *segs).all():
-                ok.append(z)
-        if ok and (best is None or ok[-1] - ok[0] > best[1] - best[0]):
-            best = (ok[0], ok[-1])
+_BUILDERS = {"gothic": _gothic, "gaudi": _gaudi, "hitech": _hitech, "parametric": _parametric, "biomech": _biomech}
+
+
+# --- mounting: keyhole slots ------------------------------------------------------------------------
+
+
+def _keyholes(g: _Frame) -> list[_Keyhole]:
+    """Keyholes spread over the plate's height, the top one as high as the plate allows (it takes the pull)."""
+    m = fasteners.metric(g.spec.screw)
+    head_r = (m.head_d + 2 * g.p.slide_fit_mm) / 2
+    back = 2 * g.p.min_wall_mm
+    proto = _Keyhole(
+        z=0.0, slot_w=_hole_d(g.spec.screw, g.p), head_r=head_r, back=back,
+        front=-g.pt + back + m.head_h + g.p.slide_fit_mm, slide=2 * head_r,
+    )
+    margin = 4 * g.p.min_wall_mm  # the same for every dialect, so the wall screws do not move with the style
+    z_top = g.H - margin - proto.head_r
+    z_bottom = margin + proto.slide + proto.head_r
     n = g.spec.screw_count
-    if best is None or (n > 1 and best[1] - best[0] < 2 * g.keep_r):
-        raise ValueError(f"no room for {n} {g.spec.screw} screw(s) on the plate face of the {g.d.name} bracket")
-    if n == 1:
-        return [best[1]]
-    return [float(z) for z in np.linspace(best[0], best[1], n)]
+    # Neighbours keep their keep-out discs apart and leave a wall between their footprints.
+    pitch = max(2 * g.keep_r, proto.z_hi - proto.z_lo + 2 * g.p.min_wall_mm)
+    if (n - 1) * pitch > z_top - z_bottom:
+        need = (n - 1) * pitch + z_bottom + g.H - z_top
+        raise ValueError(f"no room for {n} {g.spec.screw} keyholes on a {g.H:g} mm plate: they need {need:.0f} mm")
+    zs = [z_top] if n == 1 else list(np.linspace(z_top, z_bottom, n))
+    return [replace(proto, z=float(z)) for z in zs]
 
 
-def _keepout(g: _Frame, z: float) -> Face:
-    """Keep-out disc around a screw on the plate's front face (plane x = 0)."""
-    return Face(Wire.make_circle(g.keep_r, Plane(origin=(0, 0, z), x_dir=(0, 1, 0), z_dir=(1, 0, 0))))
+def _keyhole_footprint(g: _Frame, k: _Keyhole, grow: float, boss: bool = False) -> list[Point]:
+    """The keyhole's outline in the elevation (x, z), grown by `grow`; with boss, the pad round its channel."""
+    x1 = max(k.front, 0.0) + grow if boss else k.front + grow
+    x0 = -g.pt / 2 if boss else -g.pt
+    return [(x0, k.z_lo - grow), (x1, k.z_lo - grow), (x1, k.z_hi + grow), (x0, k.z_hi + grow)]
 
 
-def _check_keepouts(pts: list[Point], screws_z: list[float], r: float) -> None:
-    """An opening must not reach into the plate where a screw's keep-out disc lies."""
-    a = np.array(pts)
-    for z in screws_z:
-        band = np.abs(a[:, 1] - z) <= r
-        if (a[band, 0] < -1e-6).any():
-            raise ValueError("an opening cuts into the plate around a screw")
+def _keyhole_tool(g: _Frame, k: _Keyhole, print_down: str):
+    """Slot for the shank through the back layer, a round entry for the head, a channel the head slides in.
+
+    The ends are square: a round end lying horizontal in print would hang. Lying down (-y) the round
+    entry is horizontal too and gets a 45 degree cap towards +Y.
+    """
+    x_wall = -g.pt - 1
+    z_entry = k.z - k.slide
+    slot_len = k.slide + k.slot_w / 2
+    slot = Pos((x_wall + (-g.pt + k.back + 0.01)) / 2, 0, z_entry + slot_len / 2) * Box(
+        -g.pt + k.back + 0.01 - x_wall, k.slot_w, slot_len
+    )
+    channel_len = k.slide + k.head_r
+    channel = Pos((-g.pt + k.back + k.front) / 2, 0, z_entry + channel_len / 2) * Box(
+        k.front - (-g.pt + k.back), 2 * k.head_r, channel_len
+    )
+    reach = k.front - x_wall
+    entry = Pos(x_wall + reach / 2, 0, z_entry) * Rot(0, 90, 0) * Cylinder(k.head_r, reach)
+    tool = slot + channel + entry
+    plane = Plane(origin=(x_wall, 0, z_entry), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    up = in_plane_up(plane, print_down)
+    if up is not None:
+        tool = tool + extrude(_cap_face(2 * k.head_r, up, plane), amount=reach)
+    return tool
+
+
+# --- lattices and relief ----------------------------------------------------------------------------
+
+
+def _lattice_cut(g: _Frame, elev: _Elevation, keepouts: list[Face], print_down: str, edge: float) -> LatticeCut | None:
+    """The dialect's lattice: parametric's graded hex field in the web, hitech's triangle pockets on the arm."""
+    if g.d.name == "parametric":
+        # The field follows the web's outline: the web inset by a solid border.
+        region = max(offset(elev.web, -PARAM_BORDER * g.p.min_wall_mm, kind=Kind.ARC).faces(), key=lambda f: f.area)
+        plane = Plane(region)
+        corner = Vector(0, 0, g.H - g.t0) - plane.origin
+        cu, cv = corner.dot(plane.x_dir), corner.dot(plane.y_dir)
+        ra, _ = _segments(region, plane)
+        dist = np.hypot(ra[:, 0] - cu, ra[:, 1] - cv)
+        cell = PARAM_HEX_CELL * g.p.min_wall_mm
+        near, far = float(dist.min()) + cell / 2, float(dist.max()) - cell  # cell centres stay this far in
+
+        def field(u: float, v: float) -> float:
+            # 1 (thickest bars) nearest the plate-arm corner, where the bending peaks, 0 at the far end
+            # of the field: the whole range of bars shows across the web.
+            return (far - math.hypot(u - cu, v - cv)) / (far - near)
+
+        return lattice(
+            region, g.p, kind="hex", cell=cell, bar_max=PARAM_BAR_MAX * g.p.min_wall_mm,
+            field=field, keepout=keepouts, up=in_plane_up(plane, print_down),
+        )
+    if g.d.name == "hitech":
+        # Blind triangle pockets along the arm's +Y face (up in print lying down, so seen in use).
+        x0 = g.edge + g.p.min_wall_mm
+        x1 = g.tip_at[0] - _hole_d(g.spec.tip_hole, g.p) / 2 - 2 * g.p.min_wall_mm if g.spec.tip_hole else g.arm_end - edge
+        z0, z1 = g.H - min(g.t0, g.tip_t) + edge, g.H - edge
+        face = _side_rect(g, x0, x1, z0, z1)
+        if g.up is None:
+            # Lying down the grid's rows run along the arm and the grid is centred on the region's box,
+            # which puts a row boundary on the band's middle. A 1 mm tail below the band (too narrow
+            # for a cell) moves the box half a row down, so one row of alternating triangles fills the band.
+            row = HITECH_TRI_CELL * g.p.min_wall_mm * _SQRT3 / 2
+            face = (face + _side_rect(g, x0, x0 + 1.0, z0 - row, z0 + 0.1)).faces()[0]
+        return lattice(
+            face, g.p, kind="tri", cell=HITECH_TRI_CELL * g.p.min_wall_mm, keepout=keepouts,
+            up=in_plane_up(Plane(face), print_down),
+        )
+    return None
+
+
+def _side_rect(g: _Frame, x0: float, x1: float, z0: float, z1: float) -> Face:
+    """A rectangle on the +Y face whose own plane runs u along X (make_rect keeps the given axes)."""
+    centre = ((x0 + x1) / 2, g.spec.depth / 2, (z0 + z1) / 2)
+    return Face.make_rect(x1 - x0, z1 - z0, Plane(origin=centre, x_dir=(1, 0, 0), z_dir=(0, 1, 0)))
+
+
+def _side_plane(g: _Frame) -> Plane:
+    """The +Y face as a sketch plane: u = X, v = -Z (its normal points out of the face)."""
+    return Plane(origin=(0, g.spec.depth / 2, 0), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
+
+
+def _lattice_tool(g: _Frame, cut: LatticeCut):
+    if g.d.name == "hitech":
+        depth = HITECH_POCKET * g.spec.depth
+        return extrude(Pos(0, 0.5, 0) * cut.tool, amount=depth + 0.5, dir=(0, -1, 0))
+    return _extrude(cut.tool, g.spec.depth + 2)
+
+
+def _rib_solid(g: _Frame, path: list[Point], width: float, height: float | None = None) -> Solid:
+    """A relief rib on the +Y face along an (x, z) path."""
+    h = RIB_HEIGHT_LAYERS * g.p.layer_mm if height is None else height
+    return rib([(u, -v) for u, v in path], width, h, _side_plane(g), p=g.p)
+
+
+def _vertebra(g: _Frame, x: float, width: float, edge: float) -> Solid:
+    """One spine segment: a bar across the arm on the +Y face, clear of the edge finish."""
+    inset = edge + 0.5
+    return _rib_solid(g, [(x, g.H - g.arm_t(x) + inset), (x, g.H - inset)], width)
+
+
+def _spine_cord(g: _Frame, vertebrae: list[tuple[float, float]]) -> Solid:
+    """The low cord the vertebrae sit on, along the arm's middle."""
+    x0, x1 = vertebrae[0][0], vertebrae[-1][0]
+    path = [(x0, g.H - g.arm_t(x0) / 2), (x1, g.H - g.arm_t(x1) / 2)]
+    return _rib_solid(g, path, g.p.min_wall_mm, RIB_HEIGHT_LAYERS * g.p.layer_mm / 2)
+
+
+# --- shared tools -----------------------------------------------------------------------------------
 
 
 def _round_corners(face: Face, g: _Frame, convex: float) -> Face:
@@ -713,16 +743,6 @@ def _cap_face(d: float, up: Point, plane: Plane) -> Face:
     return to_face(clip_roof(_turn(arch("round", d, d / 2, n=32), up), up, _ROOF_DEG), plane)
 
 
-def _screw_tool(g: _Frame, z: float, print_down: str):
-    hole = Pos(0, 0, z) * Rot(0, 90, 0) * fasteners.clearance_hole(g.spec.screw, g.pt + 1, g.p)
-    plane = Plane(origin=(0.5, 0, z), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-    up = in_plane_up(plane, print_down)
-    if up is None:
-        return hole
-    cap = extrude(_cap_face(_hole_d(g.spec.screw, g.p), up, plane), amount=g.pt + 1.5, dir=(-1, 0, 0))
-    return hole + cap
-
-
 def _tip_tool(g: _Frame):
     x, z = g.tip_at
     d = g.spec.depth
@@ -731,28 +751,6 @@ def _tip_tool(g: _Frame):
         return hole
     cap = _cap_face(_hole_d(g.spec.tip_hole, g.p), g.up, Plane(origin=(x, 0, z), x_dir=(1, 0, 0), z_dir=(0, -1, 0)))
     return hole + _extrude(cap, d + 2)
-
-
-def _relief_rib(g: _Frame, bay: list[Point]) -> Solid:
-    """Gothic hood mould: a rib following the bay's arch on the +Y face, clear of the edge finish."""
-    w = g.p.min_wall_mm
-    path = _offset_open(_base_last(_coarse(bay), g.up is not None), g.edge + w)
-    if g.up is not None:
-        # Standing up the rib's ends run down onto the bed instead of hanging in the air.
-        path = [(-g.pt, path[0][1])] + path + [(-g.pt, path[-1][1])]
-    plane = Plane(origin=(0, g.spec.depth / 2, 0), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
-    return rib([(u, -v) for u, v in path], w, RIB_HEIGHT_LAYERS * g.p.layer_mm, plane, p=g.p)
-
-
-def _coarse(pts: list[Point], step: float = 2.0) -> list[Point]:
-    """Drop points closer than `step` to the last kept one (keeps corners: the rib is a chain of bars)."""
-    out = [pts[0]]
-    for i, q in enumerate(pts[1:], 1):
-        nxt = pts[(i + 1) % len(pts)]
-        turn = _corner(out[-1], q, nxt)
-        if math.dist(q, out[-1]) >= step or turn > 20:
-            out.append(q)
-    return out
 
 
 def _corner(a: Point, b: Point, c: Point) -> float:
@@ -764,51 +762,3 @@ def _corner(a: Point, b: Point, c: Point) -> float:
     cos = (d1[0] * d2[0] + d1[1] * d2[1]) / (n1 * n2)
     return math.degrees(math.acos(max(-1.0, min(1.0, cos))))
 
-
-def _parametric_lattice(g: _Frame, elev: _Elevation, body: Solid, keepouts: list[Face], print_down: str) -> Solid:
-    """Graded hex lattice in the web: densest bars at the plate-arm corner, where the bending peaks."""
-    region = elev.web - _poly(_grow(elev.bay, g.margin))
-    region = max(region.faces(), key=lambda f: f.area)
-    plane = Plane(region)
-    corner = Vector(0, 0, g.H - g.t0) - plane.origin
-    cu, cv = corner.dot(plane.x_dir), corner.dot(plane.y_dir)
-    # The web's diagonal: from the corner to the farthest point of the web.
-    wa, _ = _pts_of(elev.web, plane)
-    diag = float(np.max(np.hypot(wa[:, 0] - cu, wa[:, 1] - cv)))
-
-    def field(u: float, v: float) -> float:
-        return 1.0 - math.hypot(u - cu, v - cv) / diag
-
-    cut = lattice(
-        region, g.p, kind="hex", cell=PARAM_HEX_CELL * g.p.min_wall_mm, bar_max=PARAM_BAR_MAX * g.p.min_wall_mm,
-        field=field, keepout=keepouts, up=in_plane_up(plane, print_down),
-    )
-    if cut.tool is None:
-        return body
-    return _one(body - _extrude(cut.tool, g.spec.depth + 2))
-
-
-def _grow(pts: list[Point], dist: float) -> list[Point]:
-    """A convex ccw outline grown by `dist` (points pushed along the mitred normals)."""
-    closed = pts + pts[:2]
-    grown = _offset_open(closed, dist)[1:-1]
-    return grown[-1:] + grown[:-1]
-
-
-def _plate_lattice(g: _Frame, body: Solid, screws_z: list[float], keepouts: list[Face], print_down: str) -> Solid:
-    """Uniform triangle lattice through the wall plate between the screws."""
-    if len(screws_z) < 2:
-        note("cantilever", "hitech: one screw, no plate lattice")
-        return body
-    half = g.spec.depth / 2 - g.edge
-    lo, hi = min(screws_z), max(screws_z)
-    region = Plane(origin=(0, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-    face = to_face([(-half, lo), (half, lo), (half, hi), (-half, hi)], region)
-    cut = lattice(
-        face, g.p, kind="tri", cell=HITECH_TRI_CELL * g.p.min_wall_mm, keepout=keepouts,
-        up=in_plane_up(Plane(face), print_down),
-    )
-    if cut.tool is None:
-        return body
-    tool = extrude(Pos(0.5, 0, 0) * cut.tool, amount=g.pt + 1.5, dir=(-1, 0, 0))
-    return _one(body - tool)

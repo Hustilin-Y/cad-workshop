@@ -10,7 +10,7 @@ Build: uv run cad.py build parts/example-styles --set STYLE='gaudi'
 from cadlib.style.archetypes import CantileverSpec, cantilever
 
 # --- parameters, mm ---
-STYLE = "gothic"        # gothic, gaudi, hitech or parametric
+STYLE = "gothic"        # gothic, gaudi, hitech, parametric or biomech
 REACH = 120.0           # arm length from the plate's front face to the tip
 HEIGHT = 90.0           # plate height; the arm's top is at this height
 DEPTH = 20.0            # thickness of the bracket along Y (the extrusion)

@@ -13,17 +13,17 @@ def _l_extrusion(depth: float):
     return extrude(face, depth)
 
 
-def test_unknown_name_lists_all_four():
+def test_unknown_name_lists_all_five():
     with pytest.raises(ValueError) as e:
         get_dialect("baroque")
     msg = str(e.value)
     assert "'baroque'" in msg
-    for name in ("gothic", "gaudi", "hitech", "parametric"):
+    for name in ("gothic", "gaudi", "hitech", "parametric", "biomech"):
         assert name in msg
 
 
 def test_table():
-    assert set(DIALECTS) == {"gothic", "gaudi", "hitech", "parametric"}
+    assert set(DIALECTS) == {"gothic", "gaudi", "hitech", "parametric", "biomech"}
     assert get_dialect("gaudi").opening == "catenary" and get_dialect("gaudi").taper == 0.45
     assert get_dialect("hitech").lattice == "tri"
 
