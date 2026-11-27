@@ -113,9 +113,14 @@ The workshop only prepares files. Slicing and printing are done by [bambu-mcp](h
 | `brim` | `none`, `auto`, `outer` |
 | `material` | a plastic described in `[materials.*]` of `printer.toml` |
 | `material_reason` | a string of at most 200 characters |
+| `goal` | one of `balanced`, `speed`, `strength`, `quality`, `cheap`, `light`, `fit`, `watertight`, or a list of two different ones (primary, secondary) |
+| `goal_reason` | a string of at most 200 characters: why this goal |
+
+Give either a `goal` or explicit `walls`/`infill_*` hints. When both are set, the goal's base point wins for the settings it sets (walls, infill and so on), and bambu-mcp decides. Set `goal` from what the part does and say why in `goal_reason`: load-bearing gives `strength`, heat or outdoor use gives `strength` plus a suitable `material`, threads, snaps and press fits give `fit`, liquids or seals give `watertight`, visible decor gives `quality`, test and calibration pieces give `speed` and `cheap`. The owner's words override.
 
 ```python
 PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
+PRINT_HINTS = {"goal": ["fit", "strength"], "goal_reason": "load-bearing bracket with a press fit"}
 ```
 
 Claude never starts a print: the owner starts every print, outside the model. Without bambu-mcp, open the 3MF in Bambu Studio as before.

@@ -24,6 +24,8 @@ FULL_HINTS = {
     "brim": "outer",
     "material": "PETG",
     "material_reason": "near a lamp",
+    "goal": ["strength", "fit"],
+    "goal_reason": "a bracket with a press fit",
 }
 
 
@@ -222,3 +224,26 @@ def test_plate_hints_agree_or_conflict():
     assert plate_hints([{"walls": 3, "brim": "none"}, {"walls": 4, "brim": "none"}]) == ({}, ["walls"])
     assert plate_hints([{"walls": 3}, {}]) == ({}, ["walls"])
     assert plate_hints([{}, {}]) == ({}, [])
+
+
+def test_goal_hint_accepts_one_or_two_keys():
+    for goal in ("balanced", "speed", "strength", "quality", "cheap", "light", "fit", "watertight"):
+        assert validate_hints({"goal": goal}, load_profile()) == {"goal": goal}
+    assert validate_hints({"goal": ["speed", "cheap"]}, load_profile()) == {"goal": ["speed", "cheap"]}
+    assert validate_hints({"goal": ["fit"]}, load_profile()) == {"goal": ["fit"]}
+
+
+@pytest.mark.parametrize("goal", [
+    "fast", "", None, 3, [], ["speed", "cheap", "light"], ["speed", "speed"], ["speed", "nope"], ["speed", 1], ("speed",),
+])
+def test_goal_hint_rejects_unknown_and_three_keys(goal):
+    with pytest.raises(ValueError, match="goal"):
+        validate_hints({"goal": goal}, load_profile())
+
+
+def test_goal_reason_length():
+    assert validate_hints({"goal_reason": "x" * 200}, load_profile()) == {"goal_reason": "x" * 200}
+    with pytest.raises(ValueError, match="goal_reason"):
+        validate_hints({"goal_reason": "x" * 201}, load_profile())
+    with pytest.raises(ValueError, match="goal_reason"):
+        validate_hints({"goal_reason": 5}, load_profile())
