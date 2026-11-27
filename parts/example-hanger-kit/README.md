@@ -13,7 +13,7 @@ uv run cad.py kit parts/example-hanger-kit                          # all three 
 uv run cad.py build parts/example-hanger-kit-arm-a --set STYLE='gaudi'
 ```
 
-The style and the sizes live in `hanger_params.py`; every piece's `model.py` loads it and takes its piece from one `hanger_kit(...)` call, which is cached, so a kit build makes the kit once.
+The style and the sizes live in `hanger_params.py`; every piece's `model.py` loads it and takes its piece with `hanger_piece(...)`. The kit is built once and cached, so a kit build makes it once, and each piece's build report still lists the style notes of that piece only.
 
 ## What and why
 

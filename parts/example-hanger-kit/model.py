@@ -11,7 +11,7 @@ All pieces on plates: uv run cad.py kit parts/example-hanger-kit
 from pathlib import Path
 
 from cadlib.shared import load_module
-from cadlib.style.archetypes.hanger import hanger_kit
+from cadlib.style.archetypes.hanger import hanger_piece
 
 params = load_module(Path(__file__).resolve().parent / "hanger_params.py")
 
@@ -22,4 +22,4 @@ PRINT_DOWN = "-y"       # on its side: the sockets' closed ends on the bed, the 
 
 
 def build(p):
-    return hanger_kit(STYLE, params.SPEC, p).pieces["mount"].solid
+    return hanger_piece(STYLE, params.SPEC, p, "mount").solid

@@ -7,7 +7,8 @@ from cad import main
 from cadlib.checks import orient_for_print
 from cadlib.config import load_profile
 from cadlib.export import shape_to_mesh
-from cadlib.style.archetypes.hanger import EndProfile, HangerSpec, hanger_kit
+from cadlib.style import log
+from cadlib.style.archetypes.hanger import EndProfile, HangerSpec, hanger_kit, hanger_piece
 from style_checks import assert_printable
 
 P = load_profile()
@@ -33,15 +34,47 @@ def test_pieces_fit_and_print(style):
         assert max(orient_for_print(mesh, piece.print_down).extents[:2]) <= P.usable_volume_mm[0]
 
 
-def test_long_span_splits_arms():
+@pytest.mark.parametrize("style", STYLES)
+def test_long_span_splits_arms(style):
     long = dataclasses.replace(SPEC, span=900)
-    kit = hanger_kit("gaudi", long, P)
+    kit = hanger_kit(style, long, P)
     names = set(kit.pieces)
     assert {"arm-a-1", "arm-a-2", "arm-b-1", "arm-b-2"} <= names
     for name, piece in kit.pieces.items():
         assert len(piece.solid.solids()) == 1, name
-        box = piece.solid.bounding_box()
-        assert max(box.size.X, box.size.Z) <= P.usable_volume_mm[0] - 10, name
+        mesh = orient_for_print(shape_to_mesh(piece.solid), piece.print_down)
+        assert max(mesh.extents[:2]) <= P.usable_volume_mm[0] - 10, name
+        assert mesh.extents[2] <= P.usable_volume_mm[2], name
+
+
+def test_arm_that_fits_is_not_split():
+    # The elevation is 179 x 234 mm against a 236 mm limit: it fits whole, with its hub tenon.
+    kit = hanger_kit("gothic", dataclasses.replace(SPEC, drop=215), P)
+    assert set(kit.pieces) == {"mount", "arm-a", "arm-b"}
+    for piece in kit.pieces.values():
+        assert max(orient_for_print(shape_to_mesh(piece.solid), piece.print_down).extents[:2]) <= P.usable_volume_mm[0] - 10
+
+
+def test_each_piece_gets_its_own_style_notes():
+    spec = dataclasses.replace(SPEC, drop=207)  # a fresh cache entry: the build logs now
+    log.drain()
+    log.note("caller", "logged before the kit")
+    mount = hanger_piece("gothic", spec, P, "mount")
+    first = log.drain()
+    hanger_piece("gothic", spec, P, "arm-a")
+    arm = log.drain()
+    hanger_piece("gothic", spec, P, "arm-a")
+    again = log.drain()
+    assert mount.print_down == "-y"
+    assert any(n.tool == "caller" for n in first)  # the caller's own note is kept
+    assert not any("lancets" in n.message for n in first)  # arm notes stay off the mount
+    assert any("lancets" in n.message for n in arm)
+    assert again == arm  # a cached piece logs its notes again
+
+
+def test_kit_pieces_read_only():
+    with pytest.raises(TypeError):
+        hanger_kit("gothic", SPEC, P).pieces["extra"] = None
 
 
 def test_cradle_fits_profile():

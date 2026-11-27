@@ -29,6 +29,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from functools import lru_cache
+from types import MappingProxyType
 from typing import Literal
 
 import numpy as np
@@ -44,7 +45,7 @@ from cadlib.style.archetypes.types import Kit, Load, Piece, Support, Tunable
 from cadlib.style.dialects import Dialect, edge_size, finish_extrusion, get_dialect
 from cadlib.style.joints import DovetailSpec, dovetail
 from cadlib.style.lattice import lattice
-from cadlib.style.log import note
+from cadlib.style.log import StyleNote, drain, note
 from cadlib.style.members import catenary, curved_beam, rib, truss
 from cadlib.style.outline import Point, arch, to_face
 
@@ -115,25 +116,65 @@ class HangerSpec:
     load_n: float = 15.0        # weight of the object, N
 
 
-@lru_cache(maxsize=16)
 def hanger_kit(style: str, spec: HangerSpec, p: Profile) -> Kit:
-    """The mount, arm A and arm B (or their segments) in the given dialect; see the module docstring."""
-    dialect = get_dialect(style)
-    joint = spec.joint or DovetailSpec(length=spec.depth)
-    _validate(spec, joint, p)
-    deep = p.slide_fit_mm + joint.stop  # a socket piece reaches this much further down on -Y
-    pieces = {"mount": Piece(_mount(spec, joint, dialect, p, deep), PRINT_DOWN, ALLOWED_PRINT_DOWN)}
-    g = _frame(spec, joint, dialect, p)
-    # Both arms share one elevation (built for the taller end) and differ only in the cradle pocket.
-    for side, segments in zip("ab", _arms(g, deep, [spec.end_a, spec.end_b])):
-        if side == "a":
-            segments = [mirror(s, about=Plane.YZ) for s in segments]
-        names = [f"arm-{side}"] if len(segments) == 1 else [f"arm-{side}-{k}" for k in range(1, len(segments) + 1)]
-        for name, solid in zip(names, segments):
-            pieces[name] = Piece(solid, PRINT_DOWN, ALLOWED_PRINT_DOWN)
+    """The mount, arm A and arm B (or their segments) in the given dialect; see the module docstring.
+
+    Built once per (style, spec, p) and cached; the kit's pieces are read-only. Every call logs the
+    style notes of all pieces again. A model that builds one piece calls hanger_piece instead, so
+    its build report gets that piece's notes only.
+    """
+    kit, notes = _build(style, spec, p)
+    for name in kit.pieces:
+        _replay(notes[name])
+    return kit
+
+
+def hanger_piece(style: str, spec: HangerSpec, p: Profile, name: str) -> Piece:
+    """One piece of the (cached) kit, logging the style notes its build left."""
+    kit, notes = _build(style, spec, p)
+    if name not in kit.pieces:
+        raise ValueError(f"no piece {name!r} in this kit, there are: {', '.join(kit.pieces)}")
+    _replay(notes[name])
+    return kit.pieces[name]
+
+
+def _replay(notes: tuple[StyleNote, ...]) -> None:
+    for n in notes:
+        note(n.tool, n.message, n.level)
+
+
+@lru_cache(maxsize=16)
+def _build(style: str, spec: HangerSpec, p: Profile) -> tuple[Kit, dict[str, tuple[StyleNote, ...]]]:
+    """(kit, notes per piece): the style notes are captured while each piece is built.
+
+    A note on the arms' shared body belongs to every arm piece. The caller's own notes logged
+    before the build are put back untouched.
+    """
+    earlier = drain()
+    try:
+        dialect = get_dialect(style)
+        joint = spec.joint or DovetailSpec(length=spec.depth)
+        _validate(spec, joint, p)
+        deep = p.slide_fit_mm + joint.stop  # a socket piece reaches this much further down on -Y
+        pieces = {"mount": Piece(_mount(spec, joint, dialect, p, deep), PRINT_DOWN, ALLOWED_PRINT_DOWN)}
+        notes = {"mount": tuple(drain())}
+        g = _frame(spec, joint, dialect, p)
+        # Both arms share one elevation (built for the taller end) and differ only in the cradle pocket.
+        arms = _arms(g, deep, [spec.end_a, spec.end_b])
+        arm_notes = tuple(drain())
+        for side, segments in zip("ab", arms):
+            if side == "a":
+                segments = [mirror(s, about=Plane.YZ) for s in segments]
+            names = [f"arm-{side}"] if len(segments) == 1 else [f"arm-{side}-{k}" for k in range(1, len(segments) + 1)]
+            for name, solid in zip(names, segments):
+                pieces[name] = Piece(solid, PRINT_DOWN, ALLOWED_PRINT_DOWN)
+                notes[name] = arm_notes
+    finally:
+        drain()
+        _replay(tuple(earlier))
     x_load = spec.span / 2 - spec.cradle_len / 2
-    return Kit(
-        pieces=pieces,
+    kit = Kit(
+        pieces=MappingProxyType(pieces),
         supports=[Support((0.0, 0.0, 0.0), (0.0, 0.0, 1.0))],
         loads=[Load((s * x_load, 0.0, -spec.drop), (0, 0, -spec.load_n / 2)) for s in (-1, 1)],
         tunables={
@@ -142,6 +183,7 @@ def hanger_kit(style: str, spec: HangerSpec, p: Profile) -> Kit:
             "mount_h": Tunable("mount_h", spec.mount_h, joint.wide + 4 * p.min_wall_mm, 40.0),
         },
     )
+    return kit, notes
 
 
 # --- sizes --------------------------------------------------------------------------------------
@@ -458,10 +500,7 @@ def _arms(g: _Frame, deep: float, ends: list[EndProfile]) -> list[list[Solid]]:
     elev = _BUILDERS[g.d.name](g)
     _check_clearance(g, elev.solid)
     cuts = _cuts(g, elev)
-    cuts = [_seat(g, elev.solid, c) for c in cuts]
-    bands = [_joint_band(g, elev.solid, c) for c in cuts]
-    face = fuse([elev.solid, *bands]) if bands else elev.solid
-    face = max(face.clean().faces(), key=lambda f: f.area)
+    face, bands = _with_bands(g, elev.solid, cuts)
     face = _round(g, face, elev.keep_sharp)
 
     edge = min(g.edge, THIN_EDGE * elev.thin)
@@ -486,7 +525,7 @@ def _arms(g: _Frame, deep: float, ends: list[EndProfile]) -> list[list[Solid]]:
         bodies[y0] = solid
         return solid
 
-    joints = [_hub_joint(g)] + [_cut_joint(g, c, odd=(k % 2 == 0)) for k, c in enumerate(cuts)]
+    joints = _joints(g, cuts)
     pad = g.edge + 0.5
     arms = []
     for end in ends:
@@ -561,20 +600,55 @@ def _cut_at(centre: list[Point], s: float) -> _Cut:
 
 
 def _cuts(g: _Frame, elev: _Elevation) -> list[_Cut]:
-    """The fewest equal cuts along the centreline that leave every segment within the bed."""
+    """The fewest equal (seated) cuts along the centreline that leave every segment within the bed.
+
+    A segment's size is its elevation with the joint bands plus the tenons it carries, so an arm
+    that fits whole is never cut.
+    """
     limit = g.p.usable_volume_mm[0] - 10
     _, acc = _centre_length(elev.centre)
+    worst = (0.0, 0.0)
     for n in range(1, 8):
-        cuts = [_cut_at(elev.centre, acc[-1] * k / n) for k in range(1, n)]
-        if all(_fits(elev.solid, cuts, k, limit, g.joint.depth) for k in range(n)):
+        cuts = [_seat(g, elev.solid, _cut_at(elev.centre, acc[-1] * k / n)) for k in range(1, n)]
+        face, _ = _with_bands(g, elev.solid, cuts)
+        sizes = [_segment_size(g, face, cuts, k) for k in range(n)]
+        if all(max(size) <= limit for size in sizes):
             return cuts
-    raise ValueError("the arm does not fit the bed even in 7 segments")
+        worst = max(sizes, key=max)
+    raise ValueError(
+        f"the arm does not fit the bed even in 7 segments: the largest is {worst[0]:.0f} x {worst[1]:.0f} mm, "
+        f"the bed takes {limit:.0f} mm (usable {g.p.usable_volume_mm[0]:.0f} less a 10 mm margin)"
+    )
 
 
-def _fits(face: Face, cuts: list[_Cut], k: int, limit: float, grow: float) -> bool:
-    part = face & poly(_region(cuts, k))
+def _with_bands(g: _Frame, face: Face, cuts: list[_Cut]) -> tuple[Face, list[Face]]:
+    """(the elevation with a joint band round every cut, the bands)."""
+    bands = [_joint_band(g, face, c) for c in cuts]
+    if not bands:
+        return face, bands
+    fused = fuse([face, *bands])
+    return max(fused.clean().faces(), key=lambda f: f.area), bands
+
+
+def _segment_size(g: _Frame, face: Face, cuts: list[_Cut], k: int) -> tuple[float, float]:
+    """(X, Z) size of segment k as it lies on the bed: its elevation and the tenons sticking out of it."""
+    part = face if not cuts else face & poly(_region(cuts, k))
     box = part.bounding_box()
-    return box.size.X + 2 * grow <= limit and box.size.Z + 2 * grow <= limit
+    xs, zs = [box.min.X, box.max.X], [box.min.Z, box.max.Z]
+    if k % 2 == 0:  # tenon pieces: segments 1, 3, ... (k = 0, 2, ...)
+        reach = g.p.min_wall_mm + g.joint.depth
+        for jt in _joints(g, cuts)[k : k + 2]:
+            (x, z), (tx, tz) = jt.at, jt.t
+            for along in (0.0, reach):
+                for across in (-g.joint.wide / 2, g.joint.wide / 2):
+                    xs.append(x + tx * along + tz * across)
+                    zs.append(z + tz * along - tx * across)
+    return max(xs) - min(xs), max(zs) - min(zs)
+
+
+def _joints(g: _Frame, cuts: list[_Cut]) -> list["_Joint"]:
+    """The hub joint, then one per cut: joints[k] and joints[k + 1] are segment k's ends."""
+    return [_hub_joint(g)] + [_cut_joint(g, c, odd=(k % 2 == 0)) for k, c in enumerate(cuts)]
 
 
 def _region(cuts: list[_Cut], k: int) -> list[Point]:

@@ -9,7 +9,7 @@ Build: uv run cad.py build parts/example-hanger-kit-arm-a --set STYLE='gaudi'
 from pathlib import Path
 
 from cadlib.shared import load_module
-from cadlib.style.archetypes.hanger import hanger_kit
+from cadlib.style.archetypes.hanger import hanger_piece
 
 params = load_module(Path(__file__).resolve().parent.parent / "example-hanger-kit" / "hanger_params.py")
 
@@ -20,7 +20,6 @@ PRINT_DOWN = "-y"       # lying on its side: every opening is a vertical through
 
 
 def build(p):
-    pieces = hanger_kit(STYLE, params.SPEC, p).pieces
-    if "arm-a" not in pieces:
-        raise ValueError("arm A is split into segments for this span: give each segment a folder of its own")
-    return pieces["arm-a"].solid
+    # A span too long for the bed splits the arm into arm-a-1, arm-a-2, ...: then the piece
+    # is not found, and each segment needs a folder of its own.
+    return hanger_piece(STYLE, params.SPEC, p, "arm-a").solid

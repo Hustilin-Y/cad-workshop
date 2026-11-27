@@ -6,6 +6,7 @@ loads, the FEA check and parameter fitting (part 3) read all three.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from build123d import Solid
@@ -65,7 +66,7 @@ class Piece:
 class Kit:
     """Several printed pieces that are assembled, with the hooks of the assembly as a whole."""
 
-    pieces: dict[str, Piece]
+    pieces: Mapping[str, Piece]
     supports: list[Support] = field(default_factory=list)
     loads: list[Load] = field(default_factory=list)
     tunables: dict[str, Tunable] = field(default_factory=dict)
