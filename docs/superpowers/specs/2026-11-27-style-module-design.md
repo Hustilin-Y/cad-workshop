@@ -138,6 +138,7 @@ parts 2–4").
   point. A catenary or round opening thus gets a small pointed cap at the apex, a circle becomes
   a teardrop. Gothic pointed arches of equilateral rise or taller need no clipping.
 - Gothic arches are oriented with the point up in the print orientation.
+- (Added in review.) The organic lattice keeps upright holes printable with a 46° tent that only shrinks each hole (no bridge), instead of `outline.clip_roof`.
 - Hex grid default cell: across-flats ≥ 4 × `p.min_wall_mm`, bars ≥ `p.min_wall_mm`.
   Graded grids vary the bar width, not the cell pitch, so cells stay aligned and printable.
 - (Revised while planning.) Hex cells in a wall that stands upright in print are flat-top: their

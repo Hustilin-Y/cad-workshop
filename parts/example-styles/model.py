@@ -1,4 +1,4 @@
-"""example-styles: the cantilever bracket archetype of cadlib.style in one of four dialects.
+"""example-styles: the cantilever bracket archetype of cadlib.style in one of five dialects (gothic, gaudi, hitech, parametric, biomech).
 
 A wall plate with two screws, an arm along +X with an eye at the tip and the bracing between them.
 The plate's back (x = -PLATE_T) goes against the wall, the arm's top is at z = HEIGHT, the depth

@@ -55,6 +55,33 @@ Build flags:
 
 Other people's files in `remix/*/source/` never go into git.
 
+## Style
+
+`cadlib.style` gives visible parts an architectural look and keeps them printable: every opening and lattice cell is built to print without support (nothing steeper than 45°, bridges no longer than `max_bridge_mm` in [printer.toml](printer.toml) and anchored at both ends).
+
+Five dialects, chosen with the `STYLE` parameter at the top of a model (`--set STYLE='gaudi'` tries one without editing):
+
+| Dialect | Look |
+|---|---|
+| `gothic` | pointed arches, flying-buttress struts, nervure ribs in relief, a finial, chamfered edges |
+| `gaudi` | catenary curves and large soft roundings |
+| `hitech` | trusses with round joints, a triangle lattice, crisp thin members |
+| `parametric` | hex lattice with bars that thicken where the load is |
+| `biomech` | a generic sci-fi biomechanical look: irregular organic cells with tendon-like bars, flowing rounded silhouette |
+
+The toolkit, for any part you compose yourself:
+- `lattice`: `hex`, `tri` and `organic` (seeded Voronoi-like cells, so every build is the same) cutters whose bars are graded by any `field(x, y, z) -> 0..1`.
+- `outline`: `arch` (pointed, round, catenary, oval) and `opening`. An opening in a wall that stands upright in print gets its roof clipped to 45° (upright organic holes use a 46° tent instead).
+- `members`: tapered and curved beams, trusses, relief ribs.
+- `joints`: a `dovetail` with a snap detent. The slide axis is vertical in print and the socket mouth faces up.
+- Dropped or shrunk cosmetics are listed in the build report as "Style" lines.
+
+Two archetypes (whole-part generators) on top:
+- Cantilever bracket: [parts/example-styles](parts/example-styles/README.md), `uv run cad.py build parts/example-styles --set STYLE='biomech'`. Keyhole slots for wall mounting.
+- Hanger kit: [parts/example-hanger-kit](parts/example-hanger-kit/README.md), `uv run cad.py kit parts/example-hanger-kit`. A mount and two arms joined by dovetails, one object each in the 3MF. An arm longer than the bed is split automatically into dovetailed segments.
+
+Results stay B-rep, so STEP is exported. The strict printability helpers (overhangs, bridge anchoring, minimum wall) live in `tests/style_checks.py` and run in the tests only: the build checks below are unchanged.
+
 ## Checks in a build
 
 1. The mesh is closed and manifold, with no degenerate triangles. **Error.**
@@ -83,7 +110,7 @@ Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, A
 ```
 cad.py              CLI
 printer.toml        printer, nozzles, plastics, tolerances, filament estimate
-cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config
+cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config, style/
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
 calibration/        tolerance gauge; fit-test/ for fits against metal

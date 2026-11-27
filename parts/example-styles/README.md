@@ -19,6 +19,7 @@ uv run cad.py build parts/example-styles --set STYLE='gaudi'
 - Every motif is structural: the strut, brace, truss, web and tendons carry the load, the lattice is densest where the bending peaks.
 - Mounting: keyhole slots in the plate. Set two M4 screws in the wall 65.2 mm apart (centre to centre, the same for every dialect), leave the underside of each head 2.5 mm off the wall (the plate's back layer is 2.4 mm), put the bracket's round entries over the heads and slide it down 7.6 mm. The heads ride in a channel inside the plate, so nothing in front of the plate has to be opened up for a driver.
 - The relief (gothic ribs, hitech pockets) is on the +Y face, which faces up when printed. The preview's isometric camera looks at the -Y face; the top and right views show the relief.
+- The `example-styles-<style>-plus-y.png` files in `out/`, if present, are one-off renders of the +Y face (no command makes them, `out/` is not in git): the standard PNG always looks from -Y.
 - The elevation is drawn in 2D and extruded, so the part stays B-rep and exports STEP.
 - `PRINT_DOWN = "-y"`: lying on its side every opening is a vertical through-cut and the load acts along the layers, the strong direction. The archetype can also rebuild for `"-x"` (standing on the wall plate): voids then get 45° roofs, holes 45° caps.
 - The plate's back (x = -`PLATE_T`) goes against the wall. The load hook for later stages is a 20 N pull straight down at the tip hole.
