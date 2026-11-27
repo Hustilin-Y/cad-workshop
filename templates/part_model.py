@@ -20,8 +20,11 @@ PRINT_DOWN = None   # the side on the bed when printed, if not the model's botto
 # Hints for the slicing step (written into out/<name>.print.json by `build --print-ready`); all optional.
 # Keys: walls (1..10), infill_pct (0..100), infill_pattern (grid, gyroid, honeycomb, cubic, line, rectilinear,
 # zig-zag, adaptivecubic, lightning), supports (none, auto, tree, normal), brim (none, auto, outer),
-# material (a plastic from printer.toml), material_reason (up to 200 characters).
+# material (a plastic from printer.toml), material_reason (up to 200 characters), goal (balanced, speed, strength,
+# quality, cheap, light, fit, watertight, or a list of two) and goal_reason (up to 200 characters).
+# Give a goal OR explicit walls/infill hints: when both are set, the goal's base point wins.
 # PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
+# PRINT_HINTS = {"goal": ["strength", "fit"], "goal_reason": "load-bearing bracket with a press fit"}
 
 
 def _validate(p) -> None:
