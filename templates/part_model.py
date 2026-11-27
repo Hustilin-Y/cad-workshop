@@ -22,9 +22,9 @@ PRINT_DOWN = None   # the side on the bed when printed, if not the model's botto
 # zig-zag, adaptivecubic, lightning), supports (none, auto, tree, normal), brim (none, auto, outer),
 # material (a plastic from printer.toml), material_reason (up to 200 characters), goal (balanced, speed, strength,
 # quality, cheap, light, fit, watertight, or a list of two) and goal_reason (up to 200 characters).
-# Give a goal OR explicit walls/infill hints: when both are set, the goal's base point wins.
+# Give a goal OR explicit walls/infill hints: when both are set, the goal's base point wins for the settings it sets (walls, infill and so on).
 # PRINT_HINTS = {"walls": 4, "infill_pct": 25, "infill_pattern": "gyroid"}
-# PRINT_HINTS = {"goal": ["strength", "fit"], "goal_reason": "load-bearing bracket with a press fit"}
+# PRINT_HINTS = {"goal": ["fit", "strength"], "goal_reason": "load-bearing bracket with a press fit"}
 
 
 def _validate(p) -> None:
