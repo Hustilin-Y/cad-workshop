@@ -20,8 +20,8 @@ def steep_overhang_area(mesh: trimesh.Trimesh, print_down, max_bridge_mm: float,
     """Area (mm²) of faces steeper than OVERHANG_DEG that would need supports, in the print orientation.
 
     Exempt: faces within bed_band_mm of the bed (chamfers) and horizontal down-facing patches
-    whose shorter side is at most max_bridge_mm and that are anchored at both ends of that short
-    span (real bridges). A patch held on one side only is a cantilever ledge and counts.
+    anchored at both ends along one of their principal directions, with that span at most
+    max_bridge_mm (real bridges). A patch held on one side only is a cantilever ledge and counts.
     """
     m = orient_for_print(mesh, print_down)
     z_min = float(m.bounds[0][2])
@@ -40,38 +40,37 @@ def steep_overhang_area(mesh: trimesh.Trimesh, print_down, max_bridge_mm: float,
         if not (horizontal[patch].all() and counted[patch].any()):
             continue
         verts = m.vertices[np.unique(m.faces[patch])]
-        if _short_side(verts[:, :2]) <= max_bridge_mm and _anchored(m, verts):
+        if _bridged(m, verts, max_bridge_mm):
             counted[patch] = False
     return float(m.area_faces[counted].sum())
 
 
-def _anchored(m: trimesh.Trimesh, verts: np.ndarray) -> bool:
-    """True when material lies just beyond and below both ends of the patch's short span."""
+def _bridged(m: trimesh.Trimesh, verts: np.ndarray, max_bridge_mm: float) -> bool:
+    """True when the patch is a real bridge: anchored at both ends along one of its principal
+    directions, with that span at most max_bridge_mm. A degenerate patch is not a bridge."""
     try:
         to_box, extents = trimesh.bounds.oriented_bounds_2D(verts[:, :2])
-    except Exception:  # degenerate patch: nothing to bridge
-        return True
-    k = int(np.argmin(extents))
-    along = np.linspace(-0.4, 0.4, 5) * extents[1 - k]
+    except Exception:  # degenerate (collinear) patch: counted, not excused
+        return False
     from_box = np.linalg.inv(to_box)
     z = float(verts[:, 2].mean()) - ANCHOR_PROBE_MM
-    for side in (-1.0, 1.0):
-        box = np.zeros((len(along), 2))
-        box[:, k] = side * (extents[k] / 2 + ANCHOR_PROBE_MM)
-        box[:, 1 - k] = along
-        xy = (np.column_stack([box, np.ones(len(box))]) @ from_box.T)[:, :2]
-        probes = np.column_stack([xy, np.full(len(xy), z)])
-        if m.contains(probes).mean() < ANCHOR_SHARE:
-            return False
-    return True
-
-
-def _short_side(points_xy: np.ndarray) -> float:
-    try:
-        _, extents = trimesh.bounds.oriented_bounds_2D(points_xy)
-    except Exception:  # a degenerate (collinear) patch has no area to bridge
-        return 0.0
-    return float(min(extents))
+    for k in (0, 1):
+        if extents[k] > max_bridge_mm:
+            continue
+        along = np.linspace(-0.4, 0.4, 5) * extents[1 - k]
+        held = True
+        for side in (-1.0, 1.0):
+            box = np.zeros((len(along), 2))
+            box[:, k] = side * (extents[k] / 2 + ANCHOR_PROBE_MM)
+            box[:, 1 - k] = along
+            xy = (np.column_stack([box, np.ones(len(box))]) @ from_box.T)[:, :2]
+            probes = np.column_stack([xy, np.full(len(xy), z)])
+            if m.contains(probes).mean() < ANCHOR_SHARE:
+                held = False
+                break
+        if held:
+            return True
+    return False
 
 
 def thinnest_wall(mesh: trimesh.Trimesh, samples: int = 4000, seed: int = 0) -> float:

@@ -27,7 +27,13 @@ def test_cantilever_printable(style, down):
     a = cantilever(style, SPEC, P, down)
     assert a.solid.is_valid and len(a.solid.solids()) == 1
     assert a.print_down == down and a.allowed_print_down == ("-y", "-x")
-    assert_printable(shape_to_mesh(a.solid), down, P)
+    mesh = shape_to_mesh(a.solid)
+    assert_printable(mesh, down, P)
+    # Every keyhole channel is closed in front by material (the plate or its boss), in both orientations.
+    g = CANTILEVER._frame(SPEC, P, get_dialect(style), down)
+    for k in CANTILEVER._keyholes(g):
+        probes = [(k.front + P.min_wall_mm / 2, 0.0, z) for z in np.linspace(k.z - k.slide, k.z, 5)]
+        assert mesh.contains(probes).all(), f"keyhole at z={k.z:.1f} open in front"
 
 
 def test_bad_print_down():

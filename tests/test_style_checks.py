@@ -22,6 +22,12 @@ def test_short_bridge_is_exempt():
     assert steep_overhang_area(shape_to_mesh(t), None, P.max_bridge_mm) <= 1.0
 
 
+def test_narrow_long_bridge_is_exempt():
+    # an 8 mm span, only 3 mm wide, between two pillars: anchored along its long side
+    t = Pos(-6, 0, 5) * Box(4, 3, 10) + Pos(6, 0, 5) * Box(4, 3, 10) + Pos(0, 0, 11) * Box(16, 3, 2)
+    assert steep_overhang_area(shape_to_mesh(t), None, P.max_bridge_mm) <= 1.0
+
+
 def test_one_end_ledge_is_not_a_bridge():
     # a 6 mm ledge, 2.4 mm wide, sticking out of a wall: held on one side only
     t = Pos(0, 0, 10) * Box(10, 10, 20) + Pos(8, 0, 15) * Box(6, 2.4, 2)

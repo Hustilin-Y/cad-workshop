@@ -211,3 +211,18 @@ parts 2–4").
   circle. Strengthen the gothic read with a pinnacle (finial) at the arm tip, wider nervure ribs,
   and optionally a trefoil or quatrefoil cut in the spandrel. It must read differently from gaudi
   at a glance.
+
+## Owner review, round 3 (2026-11-27)
+
+- gothic as built in round 2 (pointed window with archivolt rib, straight strut with nervure,
+  finial at the tip): approved.
+- biomech organic cell web: approved, but the style must reach the whole part, not only the web.
+  The wall plate, the arm and the bends between them get the same organic language: generously
+  rounded plate corners and ends, flowing (spline) outer contours where the plate meets the arm
+  and the web, no straight hard edges left in the silhouette, soft large fillets. The plate stays
+  flat on its wall-contact face and keeps the keyhole positions.
+- Principle for every dialect (applied to biomech now, to others on request): a dialect governs
+  the whole silhouette and the plates, not just the openings.
+- hitech (owner, round 3): the truss node discs must not bulge out below the arm. The diagonal
+  members run straight into the arm and end inside it, flush with its underside (a clean
+  junction, small fillet at most). Visible nodes, if kept, stay within the arm's outline.

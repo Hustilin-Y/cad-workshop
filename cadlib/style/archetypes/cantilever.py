@@ -61,6 +61,8 @@ BIO_CELL = 5.0             # smallest organic cell (at the plate-arm corner) / m
 BIO_BAR_MAX = 3.0          # thickest organic bar (at the corner) / min_wall
 BIO_BORDER = 2.0           # solid rim round the organic field / min_wall
 BIO_SEED = 0               # organic lattice seed: the same seed, the same bracket
+BIO_BEND = 1.5             # rounding where the web meets the arm and the eye / root_t
+BIO_OUTER = 0.8            # rounding of the other outer corners / root_t
 RIB_WIDTH_WALLS = 2.5      # relief rib width / min_wall
 RIB_HEIGHT_LAYERS = 15     # relief rib height / layer
 RIB_RAMP = 1.1             # standing up, a rib's end slopes over this many rib heights (a little under 45 deg)
@@ -183,6 +185,8 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
         body = finish_extrusion(_extrude(face, spec.depth), dialect, spec.depth, print_down, p, edge)
     else:
         envelope = _round_corners(Face(elev.solid.outer_wire()), g, edge)
+        if bosses:
+            envelope = _trim(_fuse([envelope, *bosses]), g)  # a boss on the outer outline stays too
         body = finish_extrusion(_extrude(envelope, spec.depth), dialect, spec.depth, print_down, p, edge)
         if voids:
             body = _one(body - _extrude(Compound(voids), spec.depth + 2))
@@ -511,10 +515,15 @@ def _gaudi(g: _Frame) -> _Elevation:
 def _hitech(g: _Frame) -> _Elevation:
     bar = max(2 * g.p.min_wall_mm, HITECH_BAR * g.t0)
     node_d = HITECH_NODE * bar
-    # Nodes sit on the plate face and on the arm's underside, so each disc shows as a half round boss.
-    nodes = [(0.0, bar), (0.0, g.H - g.t0)] + [(f * g.R, g.H - g.arm_t(f * g.R) - bar / 2) for f in HITECH_NODES_AT]
-    frame = truss(nodes, [(0, 2), (0, 3)], bar, node_d, p=g.p)
-    solid = _trim(_fuse([_plate(g), _arm(g), frame, _disc(nodes[1], node_d / 2), *_eye(g)]), g)
+    # The foot node sits on the plate face. The arm nodes sit on the arm's centre line, so the
+    # diagonals run straight into the arm and their discs stay inside its outline: nothing bulges
+    # below the arm, the junction is the 2D rounding's small fillet.
+    arm_nodes = [(f * g.R, g.H - g.arm_t(f * g.R) / 2) for f in HITECH_NODES_AT]
+    if node_d > min(g.t0, g.tip_t) - 2 * g.p.min_wall_mm:
+        raise ValueError(f"hitech node {node_d:g} mm does not fit inside the {min(g.t0, g.tip_t):g} mm arm")
+    nodes = [(0.0, bar)] + arm_nodes
+    frame = truss(nodes, [(0, 1), (0, 2)], bar, node_d, p=g.p)
+    solid = _trim(_fuse([_plate(g), _arm(g), frame, *_eye(g)]), g)
     return _Elevation(solid, min(g.pt, g.tip_t, bar))
 
 
@@ -524,21 +533,47 @@ def _parametric(g: _Frame) -> _Elevation:
     return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
-def _web(g: _Frame, sag: float) -> tuple[Face, Face]:
-    """(solid, web): plate, arm and a web under a sagging spline from the plate's foot to the arm."""
+def _web(g: _Frame, sag: float, from_back: bool = False) -> tuple[Face, Face]:
+    """(solid, web): plate, arm and a web under a sagging spline from the plate's foot to the arm.
+
+    from_back starts the spline at the plate's back corner (so the foot has no step) and ends it just
+    inside the arm (so it crosses the arm's underside cleanly instead of leaving a sliver).
+    """
     xe = min(WEB_TO * g.R, g.arm_end - g.eye_r - 4 * g.edge)
-    s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe))
+    if from_back:
+        s, e = (-g.pt, 0.0), (xe, g.H - g.arm_t(xe) + 0.5)
+    else:
+        s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe))
     chord = math.hypot(e[0] - s[0], e[1] - s[1])
     under = catenary(s, e, sag * chord, n=16)
-    fill = _poly(under + [(xe, g.H - 0.5), (s[0], g.H - 0.5)])
-    solid = _trim(_fuse([_plate(g), _arm(g), fill, *_eye(g)]), g)
+    top = g.H if from_back else g.H - 0.5  # from the back corner the fill also forms the plate's top
+    fill = _poly(under + [(xe, top), (s[0], top)])
+    # Starting at the back corner, the fill already holds the plate; a plate rectangle would stick out
+    # below the spline at the plate's front foot.
+    parts = [_arm(g), fill, *_eye(g)] if from_back else [_plate(g), _arm(g), fill, *_eye(g)]
+    solid = _trim(_fuse(parts), g)
     web = max((fill - _arm(g) - _plate(g)).faces(), key=lambda f: f.area)
     return solid, web
 
 
 def _biomech(g: _Frame) -> _Elevation:
-    """A web filled with the organic cell lattice: irregular rounded cells, finest at the plate-arm corner."""
-    solid, web = _web(g, BIO_SAG)
+    """A web filled with the organic cell lattice: irregular rounded cells, finest at the plate-arm corner.
+
+    The whole silhouette speaks the same language: every corner is rounded in 2D, the bends where the
+    web meets the arm with BIO_BEND x root_t, the outer corners with BIO_OUTER x root_t. Only the wall
+    face stays flat: its two corners take at most the keyholes' margin, so the keyholes sit on flat.
+    """
+    solid, web = _web(g, BIO_SAG, from_back=True)
+    # The keyholes keep 4 x min_wall from the plate's ends. Standing on the wall face the corners
+    # at the bed would hang if rounded: they keep the bed chamfer instead.
+    wall_r = 4 * g.p.min_wall_mm * 0.8 if g.up is None else 0.0
+
+    def radius(pos: Vector, convex: bool) -> float:
+        if not convex:
+            return BIO_BEND * g.t0
+        return wall_r if pos.X < -g.pt + 0.1 else BIO_OUTER * g.t0
+
+    solid = _round_corners(solid, g, 0.0, radius=radius)
     return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
@@ -761,12 +796,13 @@ def _printable_runs(g: _Frame, path: list[Point]) -> list[list[Point]]:
 # --- shared tools -----------------------------------------------------------------------------------
 
 
-def _round_corners(face: Face, g: _Frame, convex: float) -> Face:
+def _round_corners(face: Face, g: _Frame, convex: float, radius=None) -> Face:
     """Rounded dialects round the elevation's corners in 2D, which seldom fails the way a 3D fillet does.
 
     Concave corners (where members meet) take the full dialect edge, convex ones `convex`; a corner
     that cannot take its radius tries half of it, then stays sharp. The vertical edges then are
-    tangent seams and the 3D finish only rounds the top and bed outlines.
+    tangent seams and the 3D finish only rounds the top and bed outlines. `radius(pos, convex)`, when
+    given, sets each corner's radius instead.
     """
     if g.d.edge != "fillet":
         return face
@@ -775,8 +811,10 @@ def _round_corners(face: Face, g: _Frame, convex: float) -> Face:
         if found is None:
             continue
         vertex, is_convex = found
-        r = convex if is_convex else g.edge
-        for size in (r, r / 2):
+        r = radius(pos, is_convex) if radius is not None else (convex if is_convex else g.edge)
+        if r <= 0:
+            continue
+        for size in (r, r / 2, r / 4):
             try:
                 faces = fillet(vertex, size).faces()
             except Exception:  # noqa: BLE001  OCCT refuses a radius that does not fit
