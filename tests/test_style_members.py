@@ -46,10 +46,23 @@ def test_truss_rejects_thin_bar_and_node():
         truss(nodes, ms, 3, 0.3, p=P)
 
 
-def test_rib_height_and_width():
+def test_rib_straight_path_is_flat_ended_box():
+    s = rib([(0, 0), (40, 0)], 3, 4, Plane.XZ, p=P)
+    bb = s.bounding_box()
+    assert s.is_valid
+    assert bb.size.X == pytest.approx(40, abs=1e-3)  # flat ends: length equals the path
+    assert bb.size.Z == pytest.approx(3, abs=1e-3)  # width runs along v
+    assert bb.size.Y == pytest.approx(4, abs=1e-3)  # height along the plane normal
+    assert s.volume == pytest.approx(40 * 3 * 4, rel=1e-3)
+
+
+def test_rib_bent_path():
     s = rib([(0, 0), (40, 0), (40, 30)], 3, 4, Plane.XZ, p=P)
     bb = s.bounding_box()
-    assert bb.size.Y == pytest.approx(4, abs=1e-3)  # XZ normal is -Y, extruded 4 mm
     assert s.is_valid
+    assert bb.size.Y == pytest.approx(4, abs=1e-3)
+    assert bb.size.X == pytest.approx(41.5, abs=1e-2)  # round join overshoots by width / 2
+    assert bb.size.Z == pytest.approx(31.5, abs=1e-2)  # first leg is 3 wide around v = 0
+    assert 825 < s.volume < 850  # two legs, minus the shared corner square, plus the round join
     with pytest.raises(ValueError, match="min_wall"):
         rib([(0, 0), (10, 0)], 0.2, 4, Plane.XZ, p=P)

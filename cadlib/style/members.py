@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Edge, Face, Kind, Plane, Solid, Vector, Wire
+from build123d import Edge, Face, Plane, Solid, Vector, Wire
 from scipy.optimize import brentq
 
 from cadlib.config import Profile
@@ -82,6 +82,21 @@ def catenary(p0: Point, p1: Point, sag: float, n: int = 32) -> list[Point]:
     return pts
 
 
+def _disc(plane: Plane, centre: Point, d: float) -> Face:
+    # Beams wind clockwise in (u, v), so the discs face the opposite way to fuse cleanly.
+    return Face(Wire.make_circle(d / 2, Plane(origin=_at(plane, centre), z_dir=-plane.z_dir)))
+
+
+def _fuse_one(parts: list[Face], what: str) -> Face:
+    fused = parts[0]
+    for f in parts[1:]:
+        fused = fused + f
+    faces = fused.clean().faces()
+    if len(faces) != 1:
+        raise ValueError(f"{what} is not one connected piece ({len(faces)} pieces)")
+    return faces[0]
+
+
 def truss(
     nodes: list[Point],
     members: list[tuple[int, int]],
@@ -101,24 +116,19 @@ def truss(
         raise ValueError("truss needs at least one member")
     parts: list[Face] = [taper_beam(nodes[a], nodes[b], bar, bar, p=p, plane=plane) for a, b in members]
     for i in sorted({i for m in members for i in m}):
-        # Beams wind clockwise in (u, v), so the discs face the opposite way to fuse cleanly.
-        disc = Wire.make_circle(node_d / 2, Plane(origin=_at(plane, nodes[i]), z_dir=-plane.z_dir))
-        parts.append(Face(disc))
-    fused = parts[0]
-    for f in parts[1:]:
-        fused = fused + f
-    faces = fused.clean().faces()
-    if len(faces) != 1:
-        raise ValueError(f"truss is not connected ({len(faces)} pieces)")
-    return faces[0]
+        parts.append(_disc(plane, nodes[i], node_d))
+    return _fuse_one(parts, "truss")
 
 
 def rib(path: list[Point], width: float, height: float, plane: Plane, *, p: Profile) -> Solid:
-    """A rib of `width` along the (u, v) `path` on `plane`, raised `height` along the plane normal."""
+    """A rib of `width` along the (u, v) `path` on `plane`, raised `height` along the plane normal.
+
+    Segments are flat-ended bars, so the rib is exactly as long as its path. Interior corners get
+    a round join of diameter `width`.
+    """
     _check_wall("rib width", width, p)
     if height <= 0 or len(path) < 2:
         raise ValueError("rib needs height > 0 and at least 2 path points")
-    wire = Wire.make_polygon([_at(plane, q) for q in path], close=False)
-    outline = wire.offset_2d(width / 2, kind=Kind.INTERSECTION)
-    face = Face(outline[0] if isinstance(outline, list) else outline)
-    return Solid.extrude(face, plane.z_dir * height)
+    parts = [taper_beam(a, b, width, width, p=p, plane=plane) for a, b in zip(path, path[1:])]
+    parts += [_disc(plane, q, width) for q in path[1:-1]]
+    return Solid.extrude(_fuse_one(parts, "rib"), plane.z_dir * height)
