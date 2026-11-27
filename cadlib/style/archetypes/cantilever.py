@@ -41,8 +41,11 @@ GAUDI_BRACE_AT = 0.8       # the catenary brace meets the arm at this share of t
 GAUDI_BRACE_ROOT = 1.6     # brace width at the plate / root_t
 GAUDI_SAG = 0.1            # brace sag / chord length
 GAUDI_DROOP = 0.08         # the arm's tip droops by this share of the reach
-GOTHIC_STRUT_TO = 0.75     # the pointed-arch strut meets the arm's underside at this share of the reach
+GOTHIC_STRUT_TO = 0.85     # the buttress strut meets the arm at this share of the reach
 GOTHIC_STRUT_W = 0.8       # strut width / root_t
+GOTHIC_ARCH_SPAN = 0.25    # pointed window span / reach
+GOTHIC_APEX_GAP = 0.4      # solid left between the window's point and the arm's underside / root_t
+GOTHIC_FINIAL = 1.2        # spear finial beyond the eye / eye radius
 HITECH_NODES_AT = (0.5, 0.9)
 HITECH_BAR = 0.3           # truss bar / root_t (floored at 2 x min_wall)
 HITECH_NODE = 2.5          # node disc diameter / bar
@@ -53,14 +56,14 @@ PARAM_SAG = 0.08           # parametric web underside sag / chord length
 PARAM_HEX_CELL = 6.5       # hex pitch / min_wall
 PARAM_BAR_MAX = 4.0        # thickest hex bar (at the plate-arm corner) / min_wall
 PARAM_BORDER = 2.0         # solid border round the hex field / min_wall
-BIO_STRANDS_TO = (0.3, 0.5, 0.7, 0.88)  # where the tendons meet the arm, share of the reach
-BIO_ROOT_GAP = 2.5         # gap between tendon roots on the plate / min_wall
-BIO_SAG = 0.14             # tendon bow / chord length
-BIO_ROOT_W = 0.45          # tendon width at the plate / root_t
-BIO_VERTEBRA = 0.08        # first vertebra pitch / reach
-BIO_SHRINK = 0.92          # each vertebra pitch is this share of the one before
-RIB_WIDTH_WALLS = 2        # relief rib width / min_wall
+BIO_SAG = 0.12             # biomech web underside sag / chord length
+BIO_CELL = 5.0             # smallest organic cell (at the plate-arm corner) / min_wall
+BIO_BAR_MAX = 3.0          # thickest organic bar (at the corner) / min_wall
+BIO_BORDER = 2.0           # solid rim round the organic field / min_wall
+BIO_SEED = 0               # organic lattice seed: the same seed, the same bracket
+RIB_WIDTH_WALLS = 2.5      # relief rib width / min_wall
 RIB_HEIGHT_LAYERS = 15     # relief rib height / layer
+RIB_RAMP = 1.1             # standing up, a rib's end slopes over this many rib heights (a little under 45 deg)
 THIN_EDGE = 0.45           # an edge finish is at most this share of the thinnest member
 
 _SQRT3 = math.sqrt(3.0)
@@ -127,7 +130,7 @@ class _Elevation:
     thin: float                      # the thinnest member: edge finishes stay below half of it
     web: Face | None = None          # the region a web lattice fills (parametric)
     ribs: list[list[Point]] = field(default_factory=list)  # relief rib paths on the +Y face, in (x, z)
-    vertebrae: list[tuple[float, float]] = field(default_factory=list)  # (x, width) of spine segments
+    extra: list[Face] = field(default_factory=list)  # pieces fused after the trim (the gothic finial)
 
 
 @dataclass(frozen=True)
@@ -161,11 +164,12 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     keys = _keyholes(g)
     keepouts = [_poly(_keyhole_footprint(g, k, p.min_wall_mm)) for k in keys]
     elev = _BUILDERS[style](g)
-    # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the open.
+    # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the
+    # open. It joins after the 2D rounding (which would round it away) and is kept out of every void.
     bosses = [_poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True)) for k in keys if k.front > -p.min_wall_mm]
-    if bosses:
-        elev = replace(elev, solid=_trim(_fuse([elev.solid, *bosses]), g))
     voids = [] if g.up is None else [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
+    for b in bosses:
+        voids = [f for v in voids for f in (v - b).faces()]
 
     edge = min(g.edge, THIN_EDGE * elev.thin)
     if edge < g.edge:
@@ -174,6 +178,8 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     # apex, so they are cut after the finish.
     if g.up is None:
         face = _round_corners(elev.solid, g, edge)
+        if bosses:
+            face = _trim(_fuse([face, *bosses]), g)
         body = finish_extrusion(_extrude(face, spec.depth), dialect, spec.depth, print_down, p, edge)
     else:
         envelope = _round_corners(Face(elev.solid.outer_wire()), g, edge)
@@ -190,11 +196,8 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
         body = _one(body - _tip_tool(g))
     if dialect.relief_ribs:
         for path in elev.ribs:
-            body = _one(body + _rib_solid(g, path, g.rib_w))
-        if elev.vertebrae:
-            body = _one(body + _spine_cord(g, elev.vertebrae))
-        for x, w in elev.vertebrae:
-            body = _one(body + _vertebra(g, x, w, edge))
+            for run in _printable_runs(g, path):
+                body = _one(body + _rib_solid(g, run, g.rib_w))
 
     return Archetype(
         solid=body,
@@ -244,8 +247,9 @@ def _frame(spec: CantileverSpec, p: Profile, d: Dialect, print_down: str) -> _Fr
         room = hole / 2 + 2 * p.min_wall_mm  # the hole plus two walls on each side
         if tip_t < 2 * room:
             # A slender arm ends in a round eye that holds the hole; the arm runs into its centre.
+            # The gothic eye sits back so its spear finial ends at the reach.
             eye_r = room
-            arm_end = x_tip = spec.reach - room
+            arm_end = x_tip = spec.reach - room * (1 + (GOTHIC_FINIAL if d.name == "gothic" else 0.0))
         else:
             # Room for the hole's 45 degree cap when the arm stands up.
             x_tip = spec.reach - max(room, hole / 2 * math.sqrt(2) + 2 * p.min_wall_mm)
@@ -384,47 +388,76 @@ def _printable_void(void: Face, up: Point) -> list[Face]:
 
 
 def _gothic(g: _Frame) -> _Elevation:
-    """A flying buttress: one pointed-arch strut springing level from the plate's foot to the arm.
+    """A flying buttress under a pointed window.
 
-    The strut's intrados is one leg of a pointed arch: a circle centred on the plate face, so it
-    leaves the plate square to it and meets the arm's underside at an angle, the arch's point.
-    Nervure ribs run along the intrados and along the arm's lower edge on the +Y face.
+    A straight strut runs from the plate's foot to the arm near its tip. Above it, against the
+    plate, a pointed (two-centred, equilateral) window rises to a sharp point just under the arm,
+    with a solid spandrel beside it. The arm ends in an eye with a spear finial. Nervure ribs on
+    the +Y face follow the window's head, the strut and the arm's lower edge.
     """
     w = max(GOTHIC_STRUT_W * g.t0, 2 * g.p.min_wall_mm)
-    z_f = w  # the strut's extrados reaches z = 0 at the plate
-    xe = GOTHIC_STRUT_TO * g.R
-    ze = g.H - g.arm_t(xe)
-    rise = ze - z_f
-    rho = (xe * xe + rise * rise) / (2 * rise)
-    cz = z_f + rho
+    x0 = -g.pt / 2
+    xe = min(GOTHIC_STRUT_TO * g.R, g.arm_end - g.eye_r - 2 * w)
+    s0, s1 = (x0, w / 2), (xe, g.H - g.arm_t(xe) / 2)
+    strut = _band(s0, s1, w)
+    # The strut's upper edge, the window's floor: z on it at x.
+    du, dv = s1[0] - s0[0], s1[1] - s0[1]
+    slope = dv / du
+    lift = w / 2 * math.hypot(du, dv) / du
 
-    def at(r: float, phi: float) -> Point:
-        return (r * math.cos(phi), cz + r * math.sin(phi))
+    def strut_top(x: float) -> float:
+        return s0[1] + slope * (x - s0[0]) + lift
 
-    # The extrados runs on until it is well inside the arm, so the strut lands on it full width.
-    phi_end = -math.pi / 2
-    while at(rho + w, phi_end)[1] < g.H - g.arm_t(at(rho + w, phi_end)[0]) + g.arm_t(xe) / 2:
-        phi_end += math.radians(0.5)
-    phis = np.linspace(-math.pi / 2, phi_end, 24)
-    strut = _poly(
-        [(-g.pt / 2, 0.0)] + [at(rho + w, f) for f in phis] + [at(rho, f) for f in phis[::-1]] + [(-g.pt / 2, z_f)]
-    )
-    solid = _trim(_fuse([_plate(g), _arm(g), strut, *_eye(g)]), g)
+    span = GOTHIC_ARCH_SPAN * g.R
+    rise = span * _SQRT3 / 2
+    apex_z = g.H - g.arm_t(span / 2) - GOTHIC_APEX_GAP * g.t0
+    spring = apex_z - rise
+    head = [(u + span / 2, v + spring) for u, v in arch("pointed", span, rise, n=32)]  # right springer -> left
+    if spring < strut_top(span) + w:
+        raise ValueError(f"the gothic window does not fit above the strut: make the bracket taller than {g.H:g} mm")
+    window = [(span, strut_top(span)), *head, (0.0, strut_top(0.0))]
+    solid = _trim(_fuse([_plate(g), _arm(g), strut, _spandrel(g, s0, s1, w), *_eye(g), *_finial(g)]), g)
+    solid = max((solid - _poly(window)).faces(), key=lambda f: f.area)
 
-    off = g.edge + g.rib_w / 2 + 0.2  # a rib stays clear of the edge chamfer
-    x_start = -g.pt + g.edge + g.rib_w / 2 + 0.2
-    intrados = [(x_start, z_f - off)]
-    for f in np.linspace(-math.pi / 2, phi_end, 48):
-        x, z = at(rho + off, f)
-        if z + g.rib_w / 2 > g.H - g.arm_t(x) - off:
-            break  # reached the arm: its own rib takes over
-        if g.up is not None and abs(math.cos(f)) > _RIB_MAX_SLOPE:
-            break  # standing up, the rest of the arc would hang out flatter than 45 degrees
-        intrados.append((x, z))
-    x_end = g.arm_end - g.eye_r - g.rib_w
-    arm_rib = [(x_start, g.H - g.t0 + off), (x_end, g.H - g.arm_t(x_end) + off)]
-    ribs = [arm_rib] + ([intrados] if len(intrados) > 2 else [])
-    return _Elevation(solid, min(g.pt, g.tip_t, w), ribs=ribs)
+    off = g.edge + g.rib_w / 2 + 0.3  # a rib stays clear of the edge chamfer
+    hood = [(x, z) for x, z in _offset_path(head, -off)]  # the window head, offset into the spandrel
+    strut_rib = [(0.0 + off, strut_top(off) - lift), (xe - w, strut_top(xe - w) - lift)]
+    arm_rib = [(span / 2, g.H - g.arm_t(span / 2) + off)]
+    x_stop = g.arm_end - g.eye_r - g.rib_w
+    while g.arm_t(x_stop) < off + g.rib_w / 2 + g.edge:
+        x_stop -= 1.0
+    arm_rib.append((x_stop, g.H - g.arm_t(x_stop) + off))
+    return _Elevation(solid, min(g.pt, g.tip_t, w), ribs=[hood, strut_rib, arm_rib])
+
+
+def _band(a: Point, b: Point, w: float) -> Face:
+    """A straight bar of width w from a to b."""
+    du, dv = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(du, dv)
+    nu, nv = -dv / n * w / 2, du / n * w / 2
+    return _poly([(a[0] + nu, a[1] + nv), (b[0] + nu, b[1] + nv), (b[0] - nu, b[1] - nv), (a[0] - nu, a[1] - nv)])
+
+
+def _spandrel(g: _Frame, s0: Point, s1: Point, w: float) -> Face:
+    """Everything above the strut, below the arm and in front of the plate (the window is cut from it)."""
+    return _poly([s0, s1, (s1[0], g.H - 0.5), (s0[0], g.H - 0.5)])
+
+
+def _finial(g: _Frame) -> list[Face]:
+    """The gothic spear finial beyond the eye: its flanks are steep enough to print standing up."""
+    if g.d.name != "gothic" or g.eye_r <= 0:
+        return []
+    x, z = g.tip_at
+    r = g.eye_r
+    return [_poly([(x + 0.4 * r, z + 0.8 * r), (g.R, z), (x + 0.4 * r, z - 0.8 * r)])]
+
+
+def _offset_path(path: list[Point], dist: float) -> list[Point]:
+    """An open (x, z) path moved sideways by dist (to the left of its travel when positive)."""
+    a = np.array(path)
+    d = np.gradient(a, axis=0)
+    d /= np.linalg.norm(d, axis=1)[:, None]
+    return [(float(x - dist * dz), float(z + dist * dx)) for (x, z), (dx, dz) in zip(a, d)]
 
 
 # The gaudi arm keeps its own builder instead of members.curved_beam: curved_beam makes both sides
@@ -487,48 +520,26 @@ def _hitech(g: _Frame) -> _Elevation:
 
 def _parametric(g: _Frame) -> _Elevation:
     """A web under a sagging spline, its whole field perforated by a graded hex lattice."""
-    xe = min(WEB_TO * g.R, g.arm_end - g.eye_r - 4 * g.edge)
-    s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe))
-    chord = math.hypot(e[0] - s[0], e[1] - s[1])
-    under = catenary(s, e, PARAM_SAG * chord, n=16)
-    fill = _poly(under + [(xe, g.H - 0.5), (s[0], g.H - 0.5)])
-    solid = _trim(_fuse([_plate(g), _arm(g), fill, *_eye(g)]), g)
-    web = max((fill - _arm(g) - _plate(g)).faces(), key=lambda f: f.area)
+    solid, web = _web(g, PARAM_SAG)
     return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
+def _web(g: _Frame, sag: float) -> tuple[Face, Face]:
+    """(solid, web): plate, arm and a web under a sagging spline from the plate's foot to the arm."""
+    xe = min(WEB_TO * g.R, g.arm_end - g.eye_r - 4 * g.edge)
+    s, e = (-g.pt / 2, 0.0), (xe, g.H - g.arm_t(xe))
+    chord = math.hypot(e[0] - s[0], e[1] - s[1])
+    under = catenary(s, e, sag * chord, n=16)
+    fill = _poly(under + [(xe, g.H - 0.5), (s[0], g.H - 0.5)])
+    solid = _trim(_fuse([_plate(g), _arm(g), fill, *_eye(g)]), g)
+    web = max((fill - _arm(g) - _plate(g)).faces(), key=lambda f: f.area)
+    return solid, web
+
+
 def _biomech(g: _Frame) -> _Elevation:
-    """Tendons fanning from a common root on the plate to the arm, and a segmented spine along the arm.
-
-    The lowest root runs to the farthest point, so the strands never cross; each bows outwards, which
-    opens gaps that widen from the plate. The 2D rounding (the full dialect edge in every concave
-    corner) merges their ends smoothly into the plate and the arm.
-    """
-    w_root = max(2 * g.p.min_wall_mm, BIO_ROOT_W * g.t0)
-    w_end = 2 * g.p.min_wall_mm * 1.05
-    strands = []
-    for i, f in enumerate(reversed(BIO_STRANDS_TO)):
-        p0 = (-g.pt / 2, w_root / 2 + i * (w_root + BIO_ROOT_GAP * g.p.min_wall_mm))
-        x2 = f * g.R
-        p2 = (x2, g.H - g.arm_t(x2) / 2)
-        dx, dz = p2[0] - p0[0], p2[1] - p0[1]
-        p1 = ((p0[0] + p2[0]) / 2 + BIO_SAG * dz, (p0[1] + p2[1]) / 2 - BIO_SAG * dx)  # bowed down and out
-        ts = np.linspace(0, 1, 14)
-        centre = [
-            (float((1 - t) ** 2 * p0[0] + 2 * t * (1 - t) * p1[0] + t * t * p2[0]),
-             float((1 - t) ** 2 * p0[1] + 2 * t * (1 - t) * p1[1] + t * t * p2[1]))
-            for t in ts
-        ]
-        strands.append(curved_beam(centre, list(np.linspace(w_root, w_end, len(ts))), p=g.p))
-    solid = _trim(_fuse([_plate(g), _arm(g), *strands, *_eye(g)]), g)
-
-    vertebrae = []
-    x, pitch = 2 * g.edge + g.p.min_wall_mm, BIO_VERTEBRA * g.R
-    while x < g.arm_end - g.eye_r - g.p.min_wall_mm and pitch >= 2 * g.p.min_wall_mm:
-        vertebrae.append((x, max(g.p.min_wall_mm, 0.4 * pitch)))
-        x += pitch
-        pitch *= BIO_SHRINK
-    return _Elevation(solid, min(g.pt, g.tip_t, w_end), vertebrae=vertebrae)
+    """A web filled with the organic cell lattice: irregular rounded cells, finest at the plate-arm corner."""
+    solid, web = _web(g, BIO_SAG)
+    return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
 _BUILDERS = {"gothic": _gothic, "gaudi": _gaudi, "hitech": _hitech, "parametric": _parametric, "biomech": _biomech}
@@ -589,7 +600,29 @@ def _keyhole_tool(g: _Frame, k: _Keyhole, print_down: str):
     up = in_plane_up(plane, print_down)
     if up is not None:
         tool = tool + extrude(_cap_face(2 * k.head_r, up, plane), amount=reach)
+        tool = tool + _lip_ramp(g, k, up, z_entry, slot_len)
     return tool
+
+
+def _lip_ramp(g: _Frame, k: _Keyhole, up: Point, z_entry: float, slot_len: float) -> Solid:
+    """Lying down, the lip over the slot gets a 46 degree underside instead of a flat ceiling.
+
+    The lip holds the head against the plate. Seen along the slot, its underside climbs from the
+    slot's edge at the head's face (x = -plate_t + back) towards the wall face at a slope steeper
+    than 45 degrees, so it prints as a roof. The head still bears on the full lip at the channel.
+    """
+    sign = 1.0 if up[0] > 0 else -1.0  # +Y up: the lip over +Y; -Y up: over -Y
+    x_face = -g.pt + k.back
+    x_wall = -g.pt - 1
+    t = math.tan(math.radians(_ROOF_DEG))
+    rise = (x_face - x_wall) * t
+    y_slot = sign * k.slot_w / 2
+    tri = [
+        Vector(x_face + 0.01, y_slot, z_entry),
+        Vector(x_wall, y_slot, z_entry),
+        Vector(x_wall, y_slot + sign * rise, z_entry),
+    ]
+    return Solid.extrude(Face(Wire.make_polygon(tri, close=True)), Vector(0, 0, slot_len))
 
 
 # --- lattices and relief ----------------------------------------------------------------------------
@@ -597,25 +630,23 @@ def _keyhole_tool(g: _Frame, k: _Keyhole, print_down: str):
 
 def _lattice_cut(g: _Frame, elev: _Elevation, keepouts: list[Face], print_down: str, edge: float) -> LatticeCut | None:
     """The dialect's lattice: parametric's graded hex field in the web, hitech's triangle pockets on the arm."""
-    if g.d.name == "parametric":
+    if g.d.name in ("parametric", "biomech"):
+        organic = g.d.name == "biomech"
+        border = (BIO_BORDER if organic else PARAM_BORDER) * g.p.min_wall_mm
+        cell = (BIO_CELL if organic else PARAM_HEX_CELL) * g.p.min_wall_mm
         # The field follows the web's outline: the web inset by a solid border.
-        region = max(offset(elev.web, -PARAM_BORDER * g.p.min_wall_mm, kind=Kind.ARC).faces(), key=lambda f: f.area)
+        region = max(offset(elev.web, -border, kind=Kind.ARC).faces(), key=lambda f: f.area)
         plane = Plane(region)
-        corner = Vector(0, 0, g.H - g.t0) - plane.origin
-        cu, cv = corner.dot(plane.x_dir), corner.dot(plane.y_dir)
-        ra, _ = _segments(region, plane)
-        dist = np.hypot(ra[:, 0] - cu, ra[:, 1] - cv)
-        cell = PARAM_HEX_CELL * g.p.min_wall_mm
-        near, far = float(dist.min()) + cell / 2, float(dist.max()) - cell  # cell centres stay this far in
-
-        def field(u: float, v: float) -> float:
-            # 1 (thickest bars) nearest the plate-arm corner, where the bending peaks, 0 at the far end
-            # of the field: the whole range of bars shows across the web.
-            return (far - math.hypot(u - cu, v - cv)) / (far - near)
-
+        field = _corner_field(g, region, plane, cell)
+        up = in_plane_up(plane, print_down)
+        if organic:
+            return lattice(
+                region, g.p, kind="organic", cell=cell, bar_max=BIO_BAR_MAX * g.p.min_wall_mm,
+                field=field, keepout=keepouts, up=up, seed=BIO_SEED,
+            )
         return lattice(
             region, g.p, kind="hex", cell=cell, bar_max=PARAM_BAR_MAX * g.p.min_wall_mm,
-            field=field, keepout=keepouts, up=in_plane_up(plane, print_down),
+            field=field, keepout=keepouts, up=up,
         )
     if g.d.name == "hitech":
         # Blind triangle pockets along the arm's +Y face (up in print lying down, so seen in use).
@@ -636,6 +667,23 @@ def _lattice_cut(g: _Frame, elev: _Elevation, keepouts: list[Face], print_down: 
     return None
 
 
+def _corner_field(g: _Frame, region: Face, plane: Plane, cell: float):
+    """field(u, v): 1 nearest the plate-arm corner, where the bending peaks, 0 at the far end of the region.
+
+    Normalised over the region, so the whole range of cells and bars shows across the web.
+    """
+    corner = Vector(0, 0, g.H - g.t0) - plane.origin
+    cu, cv = corner.dot(plane.x_dir), corner.dot(plane.y_dir)
+    ra, _ = _segments(region, plane)
+    dist = np.hypot(ra[:, 0] - cu, ra[:, 1] - cv)
+    near, far = float(dist.min()) + cell / 2, float(dist.max()) - cell  # cell centres stay this far in
+
+    def field(u: float, v: float) -> float:
+        return (far - math.hypot(u - cu, v - cv)) / (far - near)
+
+    return field
+
+
 def _side_rect(g: _Frame, x0: float, x1: float, z0: float, z1: float) -> Face:
     """A rectangle on the +Y face whose own plane runs u along X (make_rect keeps the given axes)."""
     centre = ((x0 + x1) / 2, g.spec.depth / 2, (z0 + z1) / 2)
@@ -654,23 +702,60 @@ def _lattice_tool(g: _Frame, cut: LatticeCut):
     return _extrude(cut.tool, g.spec.depth + 2)
 
 
-def _rib_solid(g: _Frame, path: list[Point], width: float, height: float | None = None) -> Solid:
-    """A relief rib on the +Y face along an (x, z) path."""
-    h = RIB_HEIGHT_LAYERS * g.p.layer_mm if height is None else height
-    return rib([(u, -v) for u, v in path], width, h, _side_plane(g), p=g.p)
+def _rib_solid(g: _Frame, path: list[Point], width: float) -> Solid:
+    """A relief rib on the +Y face along an (x, z) path.
+
+    Standing up (the +Y face is then a wall) both ends are cut back at a slope a little steeper than
+    45 degrees, so no end is a flat shelf hanging out of the wall.
+    """
+    h = RIB_HEIGHT_LAYERS * g.p.layer_mm
+    solid = rib([(u, -v) for u, v in path], width, h, _side_plane(g), p=g.p)
+    if g.up is None:
+        return solid
+    for end, before in ((path[0], path[1]), (path[-1], path[-2])):
+        solid = _one(solid - _ramp_cutter(g, end, before, width, h))
+    return solid
 
 
-def _vertebra(g: _Frame, x: float, width: float, edge: float) -> Solid:
-    """One spine segment: a bar across the arm on the +Y face, clear of the edge finish."""
-    inset = edge + 0.5
-    return _rib_solid(g, [(x, g.H - g.arm_t(x) + inset), (x, g.H - inset)], width)
+def _ramp_cutter(g: _Frame, end: Point, before: Point, width: float, h: float) -> Solid:
+    """A wedge that trims a rib's end to a slope rising from the wall at the end over RIB_RAMP x h."""
+    d = np.array([end[0] - before[0], end[1] - before[1]])
+    d /= np.linalg.norm(d)
+    side = np.array([-d[1], d[0]])
+    y0 = g.spec.depth / 2
+    run = RIB_RAMP * h
+
+    def at(along: float, lift: float, across: float) -> Vector:
+        x, z = np.array(end) + d * along + side * across
+        return Vector(float(x), y0 + lift, float(z))
+
+    a = width / 2 + 1
+    tri = [at(1.0, -1.0 / RIB_RAMP, -a), at(-run, h, -a), at(1.0, h + 1, -a)]
+    face = Face(Wire.make_polygon(tri, close=True))
+    return Solid.extrude(face, Vector(float(side[0]), 0, float(side[1])) * (2 * a))
 
 
-def _spine_cord(g: _Frame, vertebrae: list[tuple[float, float]]) -> Solid:
-    """The low cord the vertebrae sit on, along the arm's middle."""
-    x0, x1 = vertebrae[0][0], vertebrae[-1][0]
-    path = [(x0, g.H - g.arm_t(x0) / 2), (x1, g.H - g.arm_t(x1) / 2)]
-    return _rib_solid(g, path, g.p.min_wall_mm, RIB_HEIGHT_LAYERS * g.p.layer_mm / 2)
+def _printable_runs(g: _Frame, path: list[Point]) -> list[list[Point]]:
+    """The parts of a rib path that stand steep enough to print when the +Y face is a wall.
+
+    Lying down every rib prints on top and the whole path is one run.
+    """
+    if g.up is None:
+        return [path]
+    runs, cur = [], [path[0]]
+    for a, b in zip(path, path[1:]):
+        d = np.array(b) - np.array(a)
+        up = np.array(g.up)
+        steep = abs(float(d @ np.array([up[1], -up[0]]))) <= _RIB_MAX_SLOPE * float(np.linalg.norm(d))
+        if steep:
+            cur.append(b)
+        else:
+            if len(cur) >= 2:
+                runs.append(cur)
+            cur = [b]
+    if len(cur) >= 2:
+        runs.append(cur)
+    return [r for r in runs if math.dist(r[0], r[-1]) > 3 * RIB_RAMP * RIB_HEIGHT_LAYERS * g.p.layer_mm]
 
 
 # --- shared tools -----------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Dialects: the choices that make a form read as gothic, gaudi, hitech, parametric or biomech.
 
-biomech is a sci-fi biomechanical look: thin curved strands like tendons and segmented, spine-like relief.
+biomech is a sci-fi biomechanical look: an organic web of irregular rounded cells whose bars read as tendons.
 
 A dialect fixes the opening shape, the lattice cutter, the edge finish and the member proportions.
 Archetypes pick from here instead of hard-coding styles. Dimensionless ratios only: sizes come from the profile.
@@ -30,7 +30,7 @@ _SEAM_COS = 0.9998  # faces within ~1 degree of each other along an edge meet ta
 class Dialect:
     name: str
     opening: ArchKind
-    lattice: Literal["none", "hex", "tri"]
+    lattice: Literal["none", "hex", "tri", "organic"]
     edge: Literal["chamfer", "fillet"]
     edge_ratio: float  # edge size / extrusion depth
     relief_ribs: bool
@@ -44,7 +44,7 @@ DIALECTS: dict[str, Dialect] = {
         Dialect("gaudi", "catenary", "none", "fillet", 0.25, False, 0.45),
         Dialect("hitech", "round", "tri", "fillet", 0.05, False, 1.0),
         Dialect("parametric", "oval", "hex", "fillet", 0.15, False, 0.5),
-        Dialect("biomech", "oval", "none", "fillet", 0.2, True, 0.5),
+        Dialect("biomech", "oval", "organic", "fillet", 0.2, False, 0.5),
     )
 }
 

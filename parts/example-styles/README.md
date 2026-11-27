@@ -10,15 +10,15 @@ uv run cad.py build parts/example-styles --set STYLE='gaudi'
 
 | Dialect | Bracing | Finish |
 |---|---|---|
-| gothic | a flying buttress: one pointed-arch strut springing level from the plate's foot and meeting the arm at a point, nervure ribs in relief along its intrados and along the arm's lower edge | sharp edges with a chamfer |
+| gothic | a straight flying-buttress strut from the plate's foot to the arm, above it a tall pointed (two-centred) window against the plate whose point stands just under the arm, a solid spandrel, a spear finial beyond the tip eye, nervure ribs in relief round the window head, along the strut and along the arm's lower edge | sharp edges with a chamfer |
 | gaudi | a catenary brace of varying width from the plate's foot to the drooping arm | large soft roundings |
 | hitech | a truss fanning from the plate's foot to round nodes under the arm, a row of triangle pockets along the arm's side like a lattice girder | crisp thin members, small roundings |
 | parametric | a web under a curved underside, its whole field cut into a hex lattice whose bars thicken towards the plate-arm corner, where the bending peaks | smooth roundings |
-| biomech | a sci-fi biomechanical look: four thin tendons fanning from the plate to the arm with open gaps between them, a segmented spine of relief vertebrae along the arm, shrinking towards the tip | soft roundings |
+| biomech | a sci-fi biomechanical look: the web is an organic cell lattice, irregular rounded cells (Voronoi-like, from a fixed seed so every build is the same) whose bars read as tendons thickening where they meet; smallest cells and thickest bars at the plate-arm corner, larger cells towards the tip and the underside, a solid rim all round | soft roundings |
 
 - Every motif is structural: the strut, brace, truss, web and tendons carry the load, the lattice is densest where the bending peaks.
 - Mounting: keyhole slots in the plate. Set two M4 screws in the wall 65.2 mm apart (centre to centre, the same for every dialect), leave the underside of each head 2.5 mm off the wall (the plate's back layer is 2.4 mm), put the bracket's round entries over the heads and slide it down 7.6 mm. The heads ride in a channel inside the plate, so nothing in front of the plate has to be opened up for a driver.
-- The relief (gothic ribs, hitech pockets, biomech spine) is on the +Y face, which faces up when printed. The preview's isometric camera looks at the -Y face; the top and right views show the relief.
+- The relief (gothic ribs, hitech pockets) is on the +Y face, which faces up when printed. The preview's isometric camera looks at the -Y face; the top and right views show the relief.
 - The elevation is drawn in 2D and extruded, so the part stays B-rep and exports STEP.
 - `PRINT_DOWN = "-y"`: lying on its side every opening is a vertical through-cut and the load acts along the layers, the strong direction. The archetype can also rebuild for `"-x"` (standing on the wall plate): voids then get 45° roofs, holes 45° caps.
 - The plate's back (x = -`PLATE_T`) goes against the wall. The load hook for later stages is a 20 N pull straight down at the tip hole.
@@ -38,3 +38,4 @@ uv run cad.py build parts/example-styles --set STYLE='gaudi'
 
 - 2026-11-27: created with the style module (cantilever archetype, four dialects).
 - 2026-11-27: owner review: gothic became a flying buttress, parametric's hex field fills the web with visible grading, hitech's lattice moved to the arm's side as pockets, new biomech dialect, screws through keyhole slots instead of a bay in the web.
+- 2026-11-27: owner review 2: biomech became an organic cell web (new `organic` lattice kind), gothic got a pointed window under the arm and a spear finial; lying down, the keyhole lip over the slot has a 46° underside; standing up, relief ribs end in slopes instead of flat shelves.

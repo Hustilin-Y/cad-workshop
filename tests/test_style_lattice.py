@@ -1,11 +1,15 @@
+import math
 import time
 
 import pytest
-from build123d import Circle, Plane, Pos, Rectangle
+from build123d import Box, Circle, Plane, Pos, Rectangle, extrude
 
 from cadlib.config import load_profile
+from cadlib.export import shape_to_mesh
 from cadlib.style import log
 from cadlib.style.lattice import lattice
+from cadlib.style.plane import in_plane_up
+from style_checks import assert_printable
 
 P = load_profile()
 
@@ -104,3 +108,49 @@ def test_large_panel_is_fast():
     cut = lattice(Rectangle(200, 140), P)
     assert time.perf_counter() - t < 10
     assert cut.kept > 500
+
+
+# --- organic ---------------------------------------------------------------------------------------
+
+def _corner_field(u, v):
+    return max(0.0, 1.0 - math.hypot(u + 50, v - 35) / 110)
+
+
+def test_organic_is_deterministic_per_seed():
+    a = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, bar_max=3.6, field=_corner_field)
+    b = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, bar_max=3.6, field=_corner_field)
+    c = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, bar_max=3.6, field=_corner_field, seed=1)
+    assert a.kept == b.kept and abs(a.tool.area - b.tool.area) < 1e-6
+    assert abs(a.tool.area - c.tool.area) > 1.0
+
+
+def test_organic_cells_follow_the_field():
+    dense = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda u, v: 1.0)
+    sparse = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda u, v: 0.0)
+    assert dense.kept > 2 * sparse.kept
+    sizes = [f.area for f in lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=_corner_field).tool.faces()]
+    assert max(sizes) > 3 * min(sizes)  # cell sizes visibly vary
+
+
+def test_organic_keepout_respected():
+    hole = Pos(0, 0) * Circle(8)
+    cut = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, keepout=[hole])
+    assert cut.tool is not None and (cut.tool & hole).area == 0
+
+
+def test_organic_floors():
+    with pytest.raises(ValueError, match="below the floor"):
+        lattice(Rectangle(100, 70), P, kind="organic", cell=3.0)
+    with pytest.raises(ValueError, match="bar_min"):
+        lattice(Rectangle(100, 70), P, kind="organic", bar_min=0.5)
+    with pytest.raises(ValueError, match="leaves no hole"):
+        lattice(Rectangle(100, 70), P, kind="organic", cell=6.0, bar_max=6.0)
+
+
+def test_organic_upright_prints():
+    region = Plane.XZ * Rectangle(100, 70)
+    cut = lattice(region, P, kind="organic", cell=7.2, bar_max=3.6, field=_corner_field,
+                  up=in_plane_up(Plane(region.faces()[0]), "-z"))
+    body = Box(100, 20, 70) - extrude(cut.tool, amount=11, both=True)
+    assert len(body.solids()) == 1
+    assert_printable(shape_to_mesh(body), None, P)

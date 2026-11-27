@@ -194,3 +194,20 @@ parts 2–4").
   hours and gigabytes of RAM on the PC, and its look is unpredictable.
 - A nicer preview render (soft light, ambient occlusion, 3/4 hero view) to judge beauty.
 - More archetypes (box, lamp arm, stand) once the first two prove the toolkit.
+
+## Owner review, round 2 (2026-11-27)
+
+- biomech as built (tendons plus vertebra ribs) "is not organic at all, the vertebrae mean nothing".
+  It is replaced by an **organic cell lattice**: like the hex lattice, but the cells are irregular,
+  Voronoi-like, with rounded tendon-like bars that thicken and blend smoothly at the junctions, and
+  cell sizes that vary across the web (graded by a field, plus controlled randomness from a fixed
+  seed so builds are reproducible). The vertebra spine is dropped.
+- The organic lattice is a new lattice kind in `cadlib.style.lattice`, usable by any dialect, not
+  only by biomech. Cells stay convex so roof clipping works when the web stands upright in print.
+- The strict printability check must require a "bridge" patch to be anchored on two opposite
+  sides. A one-side-anchored horizontal patch is an overhang (cantilever), not a bridge.
+- gothic (owner, round 2): keep it and make it a true pointed arch. The buttress strut is a real
+  pointed (ogival) arch: two arcs meeting in a visible point under the arm, not a smooth quarter
+  circle. Strengthen the gothic read with a pinnacle (finial) at the arm tip, wider nervure ribs,
+  and optionally a trefoil or quatrefoil cut in the spandrel. It must read differently from gaudi
+  at a glance.
