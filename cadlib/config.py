@@ -28,6 +28,7 @@ class Profile:
     price_per_kg: float | None = None  # spool price; None — the report shows no cost
     currency: str = "UAH"
     infill_share: float = 0.15       # infill the weight estimate assumes
+    max_bridge_mm: float = 10.0      # longest bridge the style tools rely on
 
     @property
     def usable_volume_mm(self) -> tuple[float, float, float]:
@@ -82,4 +83,5 @@ def load_profile(
         price_per_kg=float(mat["price_per_kg"]) if "price_per_kg" in mat else None,
         currency=str(data.get("estimate", {}).get("currency", "UAH")),
         infill_share=float(data.get("estimate", {}).get("infill_share", 0.15)),
+        max_bridge_mm=float(printer.get("max_bridge_mm", 10)),
     )

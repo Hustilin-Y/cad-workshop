@@ -65,3 +65,13 @@ def test_a_result_that_lost_volume_is_refused():
     result, done = _apply(broken, body, list(body.edges())[:1], 1.0)
     assert done == 0
     assert result.volume == pytest.approx(body.volume)
+
+
+def test_soften_notes_dropped_edges():
+    from cadlib.style import log
+
+    log.drain()
+    body, done = soften(block(), vertical_edges(block()), 50.0)  # far too big for a 20 mm block
+    assert body.is_valid and len(body.solids()) == 1
+    notes = log.drain()
+    assert notes and notes[0].tool == "finish" and "skipped" in notes[0].message

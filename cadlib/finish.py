@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from build123d import Edge, Solid, chamfer, fillet
 
+from cadlib.style.log import note
+
 
 def _accept(body: Solid, result, edges, size: float) -> Solid | None:
     """The result if it's one valid solid whose volume moved no more than a rounding or a chamfer of `size`
@@ -28,17 +30,19 @@ def _accept(body: Solid, result, edges, size: float) -> Solid | None:
     return solids[0]
 
 
-def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]:
+def _apply(op, body: Solid, edges: list[Edge], size: float, label: str = "finish") -> tuple[Solid, int]:
     # First all edges in one operation: OCCT rounds a face's outline (a chain of tangent edges)
     # only as a whole; one by one, neighbouring edges change length and can no longer be found.
     for s in (size, size / 2):
         try:
             accepted = _accept(body, op(edges, s), edges, s)
             if accepted is not None:
+                if s != size:
+                    note("finish", f"{label} {size:g} mm: {len(edges)} of {len(edges)} edges at half size, 0 skipped")
                 return accepted, len(edges)
         except Exception:  # noqa: BLE001
             pass
-    done = 0
+    done = halved = 0
     for edge in edges:
         for s in (size, size / 2):
             # After each operation the body's edges are recreated: find the current edge by position.
@@ -50,9 +54,13 @@ def _apply(op, body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]
                 if accepted is not None:
                     body = accepted
                     done += 1
+                    halved += s != size
                     break
             except Exception:  # noqa: BLE001  OCCT raises various exceptions on a failed rounding
                 continue
+    skipped = len(edges) - done
+    if halved or skipped:
+        note("finish", f"{label} {size:g} mm: {halved} of {len(edges)} edges at half size, {skipped} skipped")
     return body, done
 
 
@@ -66,9 +74,9 @@ def _find_edge(body: Solid, edge: Edge, tol: float = 1e-4):
 
 def soften(body: Solid, edges: list[Edge], radius: float) -> tuple[Solid, int]:
     """Round edges one by one; returns (body, how many edges were rounded)."""
-    return _apply(lambda e, r: fillet(e, r), body, edges, radius)
+    return _apply(lambda e, r: fillet(e, r), body, edges, radius, "rounding")
 
 
 def bevel(body: Solid, edges: list[Edge], size: float) -> tuple[Solid, int]:
     """Chamfer edges one by one; returns (body, how many edges were done)."""
-    return _apply(lambda e, s: chamfer(e, s), body, edges, size)
+    return _apply(lambda e, s: chamfer(e, s), body, edges, size, "chamfer")
