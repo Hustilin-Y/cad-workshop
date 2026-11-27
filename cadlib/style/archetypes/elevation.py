@@ -12,7 +12,7 @@ import numpy as np
 from build123d import Compound, Edge, Face, Plane, Pos, Solid, Vector, Wire, fillet
 
 from cadlib.style.dialects import Dialect
-from cadlib.style.lattice import _segments
+from cadlib.style.lattice import _point_seg_dist, _segments
 from cadlib.style.outline import Point, arch, clip_roof, to_face
 
 ROOF_DEG = 46.0  # roofs are clipped a degree steeper than the 45 degree limit, clear of rounding noise
@@ -170,17 +170,26 @@ def cap_face(d: float, up: Point, plane: Plane) -> Face:
 
 
 def point_field(region: Face, plane: Plane, point: Point, cell: float):
-    """Lattice field(u, v) in the region's plane: 1 nearest `point` (x, z), 0 at the far end of the region.
+    """Lattice field(x, y, z) in world coordinates: 1 nearest `point` (x, z), 0 at the far end of the region.
 
-    Normalised over the region, so the whole range of cells and bars shows across it.
+    Distances are measured in the region's plane (`point` and the sample are both projected onto
+    it), normalised over the region, so the whole range of cells and bars shows across it.
     """
-    at = Vector(point[0], 0, point[1]) - plane.origin
-    cu, cv = at.dot(plane.x_dir), at.dot(plane.y_dir)
-    ra, _ = _segments(region, plane)
-    dist = np.hypot(ra[:, 0] - cu, ra[:, 1] - cv)
-    near, far = float(dist.min()) + cell / 2, float(dist.max()) - cell  # cell centres stay this far in
+    org, xd, yd = plane.origin, plane.x_dir, plane.y_dir
 
-    def field(u: float, v: float) -> float:
+    def uv(at: Vector) -> tuple[float, float]:
+        return (at - org).dot(xd), (at - org).dot(yd)
+
+    cu, cv = uv(Vector(point[0], 0, point[1]))
+    ra, rb = _segments(region, plane)
+    # Nearest: to the outline's segments (a straight edge has only its two ends as vertices);
+    # farthest: at a vertex. Cell centres stay this far in.
+    near = float(_point_seg_dist(np.array([[cu, cv]]), ra, rb).min()) + cell / 2
+    far = float(np.hypot(ra[:, 0] - cu, ra[:, 1] - cv).max()) - cell
+    far = max(far, near + cell)  # a region hardly bigger than a cell: still a falling field, no sign flip
+
+    def field(x: float, y: float, z: float) -> float:
+        u, v = uv(Vector(x, y, z))
         return (far - math.hypot(u - cu, v - cv)) / (far - near)
 
     return field

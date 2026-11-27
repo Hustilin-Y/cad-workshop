@@ -1,5 +1,5 @@
 import pytest
-from build123d import Plane, Polyline, extrude, make_face
+from build123d import Polyline, extrude, make_face
 
 from cadlib.config import load_profile
 from cadlib.style.dialects import DIALECTS, finish_extrusion, get_dialect

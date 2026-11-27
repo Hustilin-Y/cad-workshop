@@ -22,6 +22,7 @@ def _common(a, b) -> float:
     return 0.0 if both is None else both.volume
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("style", STYLES)
 def test_pieces_fit_and_print(style):
     kit = hanger_kit(style, SPEC, P)
@@ -34,6 +35,7 @@ def test_pieces_fit_and_print(style):
         assert max(orient_for_print(mesh, piece.print_down).extents[:2]) <= P.usable_volume_mm[0]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("style", STYLES)
 def test_long_span_splits_arms(style):
     long = dataclasses.replace(SPEC, span=900)
@@ -42,9 +44,12 @@ def test_long_span_splits_arms(style):
     assert {"arm-a-1", "arm-a-2", "arm-b-1", "arm-b-2"} <= names
     for name, piece in kit.pieces.items():
         assert len(piece.solid.solids()) == 1, name
-        mesh = orient_for_print(shape_to_mesh(piece.solid), piece.print_down)
-        assert max(mesh.extents[:2]) <= P.usable_volume_mm[0] - 10, name
-        assert mesh.extents[2] <= P.usable_volume_mm[2], name
+        mesh = shape_to_mesh(piece.solid)
+        laid = orient_for_print(mesh, piece.print_down)
+        assert max(laid.extents[:2]) <= P.usable_volume_mm[0] - 10, name
+        assert laid.extents[2] <= P.usable_volume_mm[2], name
+        if style == "gothic" and name.startswith("arm-"):  # the split segments print too (one dialect: time)
+            assert_printable(mesh, piece.print_down, P)
 
 
 def test_arm_that_fits_is_not_split():

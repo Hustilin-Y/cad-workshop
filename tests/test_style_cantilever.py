@@ -21,6 +21,7 @@ STYLES = ["gothic", "gaudi", "hitech", "parametric", "biomech"]
 SPEC = CantileverSpec(reach=120, height=90, depth=20, root_t=10, plate_t=6)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("style", STYLES)
 @pytest.mark.parametrize("down", ["-y", "-x"])
 def test_cantilever_printable(style, down):
@@ -49,12 +50,13 @@ def test_hooks_declared():
     assert a.supports[0].normal == (-1.0, 0.0, 0.0)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("style", STYLES)
-def test_example_builds_fast(style, repo_copy, capsys):
+def test_example_builds_fast(style, repo_copy, capsys, within_budget):
     folder = repo_copy("parts/example-styles")
     t0 = time.perf_counter()
     assert main(["build", str(folder), "--set", f"STYLE={style!r}"]) == 0
-    assert time.perf_counter() - t0 < 30
+    within_budget(time.perf_counter() - t0, 30)
     assert "FAIL" not in capsys.readouterr().out
 
 

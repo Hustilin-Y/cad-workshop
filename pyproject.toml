@@ -33,3 +33,6 @@ link-mode = "copy"   # the uv cache and the project are on different drives, har
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "slow: heavy style tests (every dialect, long spans, build-time budgets); run by default, leave out with -m \"not slow\"",
+]

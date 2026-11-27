@@ -20,7 +20,7 @@ from scipy.spatial import ConvexHull, Voronoi
 from cadlib.style.log import note
 
 LatticeKind = Literal["hex", "tri", "organic"]
-Field = Callable[[float, float], float]
+Field = Callable[[float, float, float], float]  # field(x, y, z) in world coordinates -> 0..1
 
 _SQRT3 = math.sqrt(3.0)
 _EDGE_STEP_MM = 0.25  # sampling step on curved edges: chord sag stays below 0.001 mm for r >= 8
@@ -149,7 +149,9 @@ def lattice(
     """Hex, triangle or organic cutters filling `region`, in the region's own plane (u, v = its x_dir, y_dir).
 
     `cell` is the across-flats pitch (hex) or the side (tri), default 4 x p.min_wall_mm. The bar
-    between neighbours is bar_min + (bar_max - bar_min) * field(centre), field in 0..1 (0 = thinnest).
+    between neighbours is bar_min + (bar_max - bar_min) * field(x, y, z), field in 0..1 (0 = thinnest),
+    called with the WORLD coordinates of the cell centre (or organic seed), so a stress field
+    sampled on the part plugs in unchanged.
     A cell is kept only when its hole lies inside the region shrunk by bar_min and clear of every
     keep-out grown by bar_min. `up` is print "up" in (u, v): hexes then stand flat-top and the
     top edges of their holes (down-pointing triangles for tri) must not exceed p.max_bridge_mm.
@@ -199,8 +201,8 @@ def lattice(
         note("lattice", "panel too small for one cell: left solid")
         return LatticeCut(None, 0, 0)
 
-    fld = field if field is not None else (lambda u, v: 0.0)
-    bar = bar_min + (bar_max - bar_min) * np.array([min(1.0, max(0.0, float(fld(u, v)))) for u, v in centres])
+    f = _plane_field(field, plane)
+    bar = bar_min + (bar_max - bar_min) * np.array([f(u, v) for u, v in centres])
     size = cell - shrink * bar  # across flats (hex) or side (tri)
     # Vertex angles, counter-clockwise, in the frame where `up` is +v, then turned into (u, v).
     if kind == "hex":
@@ -219,6 +221,20 @@ def lattice(
     holes = centres[:, None, :] + radius[:, None, None] * np.stack([np.cos(ang_tab), np.sin(ang_tab)], axis=-1)
 
     return _finish(holes, centres, region, plane, keepout, bar_min, 0)
+
+
+def _plane_field(field: Field | None, plane: Plane) -> Callable[[float, float], float]:
+    """The world field(x, y, z) read at the plane's (u, v), clamped to 0..1 (no field: 0 everywhere)."""
+    if field is None:
+        return lambda u, v: 0.0
+    org = np.array(tuple(plane.origin))
+    xd, yd = np.array(tuple(plane.x_dir)), np.array(tuple(plane.y_dir))
+
+    def f(u: float, v: float) -> float:
+        x, y, z = org + u * xd + v * yd
+        return min(1.0, max(0.0, float(field(float(x), float(y), float(z)))))
+
+    return f
 
 
 def _finish(holes, centres, region, plane, keepout, bar_min, dropped_before: int, outlines=None) -> LatticeCut:
@@ -382,10 +398,7 @@ def _organic(region, p, cell, bar_min, bar_max, field, keepout, up, seed) -> Lat
     ra, rb = _segments(region, plane)
     pts = np.concatenate([ra, rb])
     lo, hi = pts.min(axis=0), pts.max(axis=0)
-    fld = field if field is not None else (lambda u, v: 0.0)
-
-    def f(u: float, v: float) -> float:
-        return min(1.0, max(0.0, float(fld(u, v))))
+    f = _plane_field(field, plane)
 
     def spacing(u: float, v: float) -> float:
         return cell * (1.0 + (ORGANIC_SPREAD - 1.0) * (1.0 - f(u, v)))

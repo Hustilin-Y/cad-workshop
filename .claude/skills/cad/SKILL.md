@@ -39,7 +39,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 
 When the part is visible in use (brackets, hangers, arms, lamp parts) and the user wants it to look designed, use `cadlib.style` instead of bare boxes:
 - Ask which dialect: `gothic`, `gaudi`, `hitech`, `parametric` or `biomech` (a generic sci-fi biomechanical look: never name a film or artist). Keep it as `STYLE = "..."` at the top of `model.py`, so `--set STYLE=...` tries the others.
-- Start from an archetype when one fits: `from cadlib.style.archetypes import CantileverSpec, cantilever` (see `parts/example-styles`) or `HangerSpec, hanger_piece` (see `parts/example-hanger-kit`, built with `uv run cad.py kit`). Otherwise compose the toolkit: `from cadlib.style import lattice, outline, members, joints` (`lattice` has `hex`, `tri`, `organic`).
+- Start from an archetype when one fits: `from cadlib.style.archetypes import CantileverSpec, cantilever` (see `parts/example-styles`) or `HangerSpec, hanger_piece` (see `parts/example-hanger-kit`, built with `uv run cad.py kit`). Otherwise compose the toolkit: `from cadlib.style import lattice, outline, members, joints` (`lattice.lattice(region, p, kind="hex"|"tri"|"organic")`, graded by `field(x, y, z) -> 0..1` in world coordinates).
 - The tools already keep overhangs at 45° and bridges within `max_bridge_mm`. Set `PRINT_DOWN` as the archetype says.
 - Dropped or shrunk cosmetics are reported as "Style" lines in the build report: read them and tell the user.
 - Show the PNG, and say which side carries the relief (the preview's isometric camera looks at -Y, so +Y relief shows in the top and right views).

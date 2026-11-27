@@ -44,7 +44,7 @@ from cadlib.style.archetypes.elevation import (
 from cadlib.style.archetypes.types import Kit, Load, Piece, Support, Tunable
 from cadlib.style.dialects import Dialect, edge_size, finish_extrusion, get_dialect
 from cadlib.style.joints import DovetailSpec, dovetail
-from cadlib.style.lattice import lattice
+from cadlib.style.lattice import _inside, _segments, lattice
 from cadlib.style.log import StyleNote, drain, note
 from cadlib.style.members import catenary, curved_beam, rib, truss
 from cadlib.style.outline import Point, arch, to_face
@@ -79,11 +79,13 @@ PARAM_BELLY = 0.2         # mount underside sag / mount_h
 BIO_SAG = 0.12            # biomech web underside sags this share of its chord below it
 BIO_CELL = 8.0            # smallest organic cell / min_wall (larger than the cantilever's: a web four times the area)
 BIO_BAR_MAX = 3.0         # thickest organic bar / min_wall
+BIO_MOUNT_CELL = 5.0      # smallest organic cell in the mount / min_wall (the cantilever's: the arm web's would not fit)
 BIO_SEED = 0              # organic lattice seed: the same seed, the same kit
 BIO_BEND = 1.5            # rounding where members meet / arm_t
 BIO_OUTER = 0.8           # rounding of outer corners / arm_t
 BIO_BELLY = 0.35          # mount underside sag / mount_h
 WEB_BORDER = 2.0          # solid rim round a lattice field / min_wall
+RIB_BAND_GAP = 0.5        # a relief rib stops this far (/ min_wall) beyond half its width from a joint band
 
 _SQRT3 = math.sqrt(3.0)
 _BIG = 1e4
@@ -518,10 +520,9 @@ def _arms(g: _Frame, deep: float, ends: list[EndProfile]) -> list[list[Solid]]:
         if tool is not None:
             solid = one(solid - extrude_y(tool, depth + 2 * deep + 2, y0 - 1), "the arm")
         if g.d.relief_ribs and elev.ribs:
-            ribs = fuse([_rib_solid(g, path) for path in elev.ribs])
-            for b in bands:
-                ribs = ribs - extrude_y(b, 20, depth / 2 - 1)
-            solid = one(solid + ribs, "the arm")
+            runs = [run for path in elev.ribs for run in _rib_runs(g, path, bands)]
+            if runs:
+                solid = one(solid + fuse([_rib_solid(g, run) for run in runs]), "the arm")
         bodies[y0] = solid
         return solid
 
@@ -771,7 +772,9 @@ def _pocket(g: _Frame, e: EndProfile) -> Solid:
     half_top = e.width / 2 + fit
     half_bottom = (e.narrow / 2 + fit) if e.kind == "trapezoid" else half_top
     y_far = g.spec.depth / 2 + 1
-    z_top = max(g.z_wall, g.z_b + e.height) + 1
+    # Up to z_clear: the room over the object is empty there, but the rounding adds a concave fillet
+    # where the end wall meets the cradle; cut lower, its sliver would end in a feather edge.
+    z_top = max(g.z_clear, g.z_wall + 1, g.z_b + e.height + 1)
     pts = [(-half_bottom, g.z_b), (y_far, g.z_b), (y_far, z_top), (-half_top, z_top), (-half_top, g.z_b + e.height)]
     if half_bottom == half_top:
         pts.pop()
@@ -832,6 +835,40 @@ def _inset(face: Face, d: float) -> Face:
     return to_face([(float(u), float(v)) for u, v in best])
 
 
+def _rib_runs(g: _Frame, path: list[Point], bands: list[Face], step: float = 0.25) -> list[list[Point]]:
+    """The rib path with the stretches over the joint bands left out.
+
+    The rib stops short of each band by half its width plus a margin, with its own square end.
+    Cutting the finished rib along the band's edge instead leaves a knife-edge wedge wherever the
+    rib crosses the cut at a slant. Pieces shorter than two rib widths are dropped.
+    """
+    if not bands:
+        return [path]
+    pts = np.array(path, dtype=float)
+    acc = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+    s = np.append(np.arange(0.0, acc[-1], step), acc[-1])
+    at = np.column_stack([np.interp(s, acc, pts[:, 0]), np.interp(s, acc, pts[:, 1])])
+    clear = g.rib_w / 2 + RIB_BAND_GAP * g.p.min_wall_mm
+    covered = np.zeros(len(s), dtype=bool)
+    for b in bands:
+        grown = max(offset(b, clear, kind=Kind.ARC).faces(), key=lambda f: f.area)
+        ra, rb = _segments(grown, Plane.XZ)
+        covered |= _inside(at, ra, rb)
+    runs, i = [], 0
+    while i < len(s):
+        if covered[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(s) and not covered[j + 1]:
+            j += 1
+        if s[j] - s[i] >= 2 * g.rib_w:
+            inner = [tuple(map(float, pts[k])) for k in range(len(pts)) if s[i] + 0.05 < acc[k] < s[j] - 0.05]
+            runs.append([tuple(map(float, at[i])), *inner, tuple(map(float, at[j]))])
+        i = j + 1
+    return runs
+
+
 def _rib_solid(g: _Frame, path: list[Point]) -> Solid:
     """A relief rib on the +Y face (up in print) along an (x, z) path."""
     plane = Plane(origin=(0, g.spec.depth / 2, 0), x_dir=(1, 0, 0), z_dir=(0, 1, 0))  # u = X, v = -Z
@@ -882,13 +919,24 @@ def _mount(spec: HangerSpec, joint: DovetailSpec, d: Dialect, p: Profile, deep: 
         region = face & poly([(-L2 + jb, -H - _BIG), (L2 - jb, -H - _BIG), (L2 - jb, -WEB_BORDER * p.min_wall_mm), (-L2 + jb, -WEB_BORDER * p.min_wall_mm)])
         region = max(offset(max(region.faces(), key=lambda f: f.area), -WEB_BORDER * p.min_wall_mm, kind=Kind.ARC).faces(), key=lambda f: f.area)
         organic = d.name == "biomech"
-        cell = (BIO_CELL if organic else PARAM_HEX_CELL) * p.min_wall_mm
-        fld = point_field(region, Plane(region), (0.0, 0.0), cell)
-        cut = lattice(region, p, kind="organic" if organic else "hex", cell=cell,
-                      bar_max=(BIO_BAR_MAX if organic else PARAM_BAR_MAX) * p.min_wall_mm,
-                      field=fld, keepout=keep, up=None, seed=BIO_SEED)
-        if cut.tool is not None:
-            body = one(body - extrude_y(cut.tool, D + deep + 2, y0 - 1), "the mount")
+        cell = (BIO_MOUNT_CELL if organic else PARAM_HEX_CELL) * p.min_wall_mm
+        if organic:
+            # Organic cells are seeded over their region: seeds under the screw strips would only make
+            # cells that cross them and drop out. The bays between the strips are lattice regions of
+            # their own (the edge margin replaces the keep-out's). The bar is short and carries the
+            # arms at both ends: no grading, the smallest cells and the thickest bars all over (a
+            # falling field would spread the seeds wider than the bay is tall).
+            bays = [f for f in (region - keep).faces() if f.area > cell**2]
+            cuts = [lattice(bay, p, kind="organic", cell=cell, bar_max=BIO_BAR_MAX * p.min_wall_mm,
+                            field=lambda x, y, z: 1.0, up=None, seed=BIO_SEED) for bay in bays]
+            holes = [f for c in cuts if c.tool is not None for f in c.tool.faces()]
+            tool = Compound(holes) if holes else None
+        else:
+            fld = point_field(region, Plane(region), (0.0, 0.0), cell)
+            tool = lattice(region, p, kind="hex", cell=cell, bar_max=PARAM_BAR_MAX * p.min_wall_mm,
+                           field=fld, keepout=keep, up=None).tool
+        if tool is not None:
+            body = one(body - extrude_y(tool, D + deep + 2, y0 - 1), "the mount")
     if d.name == "hitech":
         rect = Face.make_rect(2 * (L2 - jb), H - 2 * edge,
                               Plane(origin=(0, D / 2, -H / 2), x_dir=(1, 0, 0), z_dir=(0, 1, 0)))

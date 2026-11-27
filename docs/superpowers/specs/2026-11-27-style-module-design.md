@@ -160,11 +160,13 @@ parts 2–4").
   line.
 - "Printable by construction" is enforced by **strict checks in the style tests only**: zero
   faces steeper than 45° outside bed chamfers in the stated print orientation, and a mesh-based
-  minimum wall/bar thickness ≥ `p.min_wall_mm`. The build pipeline's `checks.py` is not made
+  minimum wall/bar thickness: walls measured by inward rays between opposite faces, at most
+  1 mm² of surface thinner than 0.95 × `p.min_wall_mm`. The build pipeline's `checks.py` is not made
   stricter in part 1, so the owner's local parts and `build --all` are unaffected.
 - Print orientation of an archetype: each archetype has one default orientation and declares
   a small set of allowed alternatives it can rebuild for (`allowed_print_down`). Part 2 picks
-  among those. Toolkit functions take `print_down` and adapt (arch point, hex vertex up).
+  among those. Toolkit functions take `up`, the print-up direction in the sketch plane
+  (`plane.in_plane_up(plane, print_down)`), and adapt (arch point, hex vertex up).
 - Owner review stop: after the cantilever archetype exists in all four dialects, the work pauses
   for the owner to look at them (PNG plus OCP Viewer) and adjust defaults before the second
   archetype is built.
@@ -175,8 +177,9 @@ parts 2–4").
   direction), even though part 1 does not use them. Part 2 reads the load vector, part 3 runs FEA.
 - Every archetype exposes its tunable parameters with bounds (a small dataclass), so part 3 can
   search them.
-- The lattice grading takes any callable `field(x, y, z) -> 0..1`, so an FEA stress field plugs
-  in without changing the lattice code.
+- The lattice grading takes any callable `field(x, y, z) -> 0..1`, called with the world
+  coordinates of each cell centre (organic: each seed), so an FEA stress field plugs in without
+  changing the lattice code.
 
 ## Left to the builder
 

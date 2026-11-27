@@ -1,8 +1,9 @@
+import pytest
 from build123d import Box, Pos
 
 from cadlib.config import load_profile
 from cadlib.export import shape_to_mesh
-from style_checks import steep_overhang_area, thinnest_wall
+from style_checks import steep_overhang_area, thin_wall_area, thinnest_wall
 
 P = load_profile()
 
@@ -37,3 +38,22 @@ def test_one_end_ledge_is_not_a_bridge():
 def test_thin_fin_is_found():
     t = Box(20, 20, 4) + Pos(0, 0, 7) * Box(20, 0.8, 10)
     assert thinnest_wall(shape_to_mesh(t)) < 1.0
+
+
+def test_box_corners_are_not_thin_walls():
+    # Rays from near an edge leave through the side face: a corner, not a wall.
+    assert thin_wall_area(shape_to_mesh(Box(20, 20, 20)), 0.95 * P.min_wall_mm) == 0.0
+
+
+def test_thin_fin_area():
+    t = Box(20, 20, 4) + Pos(0, 0, 7) * Box(20, 0.8, 10)
+    assert thin_wall_area(shape_to_mesh(t), 0.95 * P.min_wall_mm) > 200  # both 20 x 10 mm sides
+
+
+def test_small_thin_patch_is_found():
+    # A 3 x 3 mm pocket leaving a 0.8 mm floor in a 60 x 60 x 10 mm block: 18 mm² of thin wall,
+    # 0.2 % of the surface, which a 1st-percentile thickness would hide.
+    t = Box(60, 60, 10) - Pos(0, 0, 0.65) * Box(3, 3, 9.7)  # z -5..5, the pocket from z = -4.2 up
+    mesh = shape_to_mesh(t)
+    assert thin_wall_area(mesh, 0.95 * P.min_wall_mm) > 5
+    assert thinnest_wall(mesh) == pytest.approx(0.8, abs=0.01)

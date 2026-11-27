@@ -166,16 +166,19 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     keys = _keyholes(g)
     keepouts = [poly(_keyhole_footprint(g, k, p.min_wall_mm)) for k in keys]
     elev = _BUILDERS[style](g)
-    # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the
-    # open. It joins after the 2D rounding (which would round it away) and is kept out of every void.
-    bosses = [poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True)) for k in keys if k.front > -p.min_wall_mm]
-    voids = [] if g.up is None else [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
-    for b in bosses:
-        voids = [f for v in voids for f in (v - b).faces()]
-
     edge = min(g.edge, THIN_EDGE * elev.thin)
     if edge < g.edge:
         note("cantilever", f"{style}: edge {g.edge:.1f} mm shrunk to {edge:.1f} mm, thinnest member {elev.thin:.1f} mm", "info")
+    # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the
+    # open. It joins after the 2D rounding (which would round it away) and is kept out of every void.
+    # Lying down its corners are vertical edges that get the dialect's finish: the boss runs on past
+    # the channel's ends by that finish, so the rounding never thins the wall round the channel.
+    finish = max(min(edge_size(dialect, spec.depth, p), edge), p.layer_mm) if g.up is None else 0.0
+    bosses = [poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True, run_on=finish))
+              for k in keys if k.front > -p.min_wall_mm]
+    voids = [] if g.up is None else [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
+    for b in bosses:
+        voids = [f for v in voids for f in (v - b).faces()]
     # Lying down the voids are finished with the outline. Standing up their tent roofs keep a sharp
     # apex, so they are cut after the finish.
     if g.up is None:
@@ -304,21 +307,13 @@ def _eye(g: _Frame) -> list[Face]:
     return [poly(shift(clip_roof(circle, down, ROOF_DEG), g.tip_at))]
 
 
-Segs = tuple[np.ndarray, np.ndarray]
-
-
-def _pts_of(shape, plane: Plane = _XZ) -> Segs:
-    return _segments(shape, plane)
-
-
-
 def _printable_void(void: Face, up: Point) -> list[Face]:
     """The largest part of a void under a 45 degree tent (towards `up`), so its roof needs no support.
 
     Unlike an opening, a void is bounded by members: its roof is filled down to the tent instead of
     being cut up into a point. The tent's apex is tried at points around the void, the roomiest wins.
     """
-    a, b = _pts_of(void)
+    a, b = _segments(void, _XZ)
     span = float(np.ptp(np.concatenate([a, b]), axis=0).max()) * 4
     t = math.tan(math.radians(ROOF_DEG))
     ux, uz = up
@@ -447,7 +442,6 @@ def _gaudi(g: _Frame) -> _Elevation:
     return _Elevation(solid, min(g.pt, g.tip_t, widths[-1]))
 
 
-
 def _hitech(g: _Frame) -> _Elevation:
     bar = max(2 * g.p.min_wall_mm, HITECH_BAR * g.t0)
     node_d = HITECH_NODE * bar
@@ -541,11 +535,13 @@ def _keyholes(g: _Frame) -> list[_Keyhole]:
     return [replace(proto, z=float(z)) for z in zs]
 
 
-def _keyhole_footprint(g: _Frame, k: _Keyhole, grow: float, boss: bool = False) -> list[Point]:
-    """The keyhole's outline in the elevation (x, z), grown by `grow`; with boss, the pad round its channel."""
+def _keyhole_footprint(g: _Frame, k: _Keyhole, grow: float, boss: bool = False, run_on: float = 0.0) -> list[Point]:
+    """The keyhole's outline in the elevation (x, z), grown by `grow`; with boss, the pad round its
+    channel, which runs on `run_on` further past the channel's ends (room for its corner finish)."""
     x1 = max(k.front, 0.0) + grow if boss else k.front + grow
     x0 = -g.pt / 2 if boss else -g.pt
-    return [(x0, k.z_lo - grow), (x1, k.z_lo - grow), (x1, k.z_hi + grow), (x0, k.z_hi + grow)]
+    lo, hi = k.z_lo - grow - run_on, k.z_hi + grow + run_on
+    return [(x0, lo), (x1, lo), (x1, hi), (x0, hi)]
 
 
 def _keyhole_tool(g: _Frame, k: _Keyhole, print_down: str):
@@ -639,7 +635,7 @@ def _lattice_cut(g: _Frame, elev: _Elevation, keepouts: list[Face], print_down: 
 
 
 def _corner_field(g: _Frame, region: Face, plane: Plane, cell: float):
-    """field(u, v): 1 nearest the plate-arm corner, where the bending peaks, 0 at the far end of the region."""
+    """field(x, y, z): 1 nearest the plate-arm corner, where the bending peaks, 0 at the far end of the region."""
     return point_field(region, plane, (0.0, g.H - g.t0), cell)
 
 

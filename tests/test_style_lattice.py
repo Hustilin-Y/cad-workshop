@@ -1,6 +1,7 @@
 import math
 import time
 
+import numpy as np
 import pytest
 from build123d import Box, Circle, Plane, Pos, Rectangle, extrude
 
@@ -49,8 +50,8 @@ def test_border_margin_is_bar_min():
 
 
 def test_graded_bars_remove_less_where_field_is_high():
-    left = lattice(Rectangle(80, 50), P, bar_max=3 * P.min_wall_mm, field=lambda u, v: 1.0)
-    right = lattice(Rectangle(80, 50), P, bar_max=3 * P.min_wall_mm, field=lambda u, v: 0.0)
+    left = lattice(Rectangle(80, 50), P, bar_max=3 * P.min_wall_mm, field=lambda x, y, z: 1.0)
+    right = lattice(Rectangle(80, 50), P, bar_max=3 * P.min_wall_mm, field=lambda x, y, z: 0.0)
     assert left.tool.area < right.tool.area
 
 
@@ -97,23 +98,52 @@ def test_circle_region():
     assert (cut.tool - Circle(30 - P.min_wall_mm + 0.02).faces()[0]).area < 0.05
 
 
+@pytest.mark.parametrize("kind", ["hex", "organic"])
+def test_field_gets_world_coordinates(kind):
+    """field(x, y, z) is called with world points of the region, not with the plane's (u, v)."""
+    region = Pos(200, 30, 0) * (Plane.XZ * Rectangle(60, 40))  # x 170..230, y = 30, z -20..20
+    seen = []
+
+    def field(x, y, z):
+        seen.append((x, y, z))
+        return 0.5
+
+    cut = lattice(region, P, kind=kind, cell=7.2, bar_max=3.6, field=field)
+    assert cut.kept > 0 and seen
+    xyz = np.array(seen)
+    assert (xyz[:, 0] > 170).all() and (xyz[:, 0] < 230).all()
+    assert np.allclose(xyz[:, 1], 30.0)
+    assert (abs(xyz[:, 2]) < 20).all() and xyz[:, 2].std() > 5
+
+
+def test_field_grades_by_world_position():
+    """A field that is 1 at world x > 200 makes thicker bars (smaller holes) on that side only."""
+    region = Pos(200, 0, 0) * Rectangle(80, 50)
+    cut = lattice(region, P, bar_max=3 * P.min_wall_mm, field=lambda x, y, z: 1.0 if x > 200 else 0.0)
+    left = [f.area for f in cut.tool.faces() if f.center().X < 195]
+    right = [f.area for f in cut.tool.faces() if f.center().X > 205]
+    assert max(right) < min(left)
+
+
 def test_log_info_for_dropped():
     log.drain()
     lattice(Rectangle(80, 50), P)
     assert any(n.level == "info" and "dropped" in n.message for n in log.drain())
 
 
-def test_large_panel_is_fast():
+@pytest.mark.slow
+def test_large_panel_is_fast(within_budget):
     t = time.perf_counter()
     cut = lattice(Rectangle(200, 140), P)
-    assert time.perf_counter() - t < 10
+    within_budget(time.perf_counter() - t, 10)
     assert cut.kept > 500
 
 
 # --- organic ---------------------------------------------------------------------------------------
 
-def _corner_field(u, v):
-    return max(0.0, 1.0 - math.hypot(u + 50, v - 35) / 110)
+def _corner_field(x, y, z):
+    # World coordinates: the panels below lie in XY (z = 0) or XZ (y = 0), so y + z is the panel's height.
+    return max(0.0, 1.0 - math.hypot(x + 50, y + z - 35) / 110)
 
 
 def test_organic_is_deterministic_per_seed():
@@ -125,8 +155,8 @@ def test_organic_is_deterministic_per_seed():
 
 
 def test_organic_cells_follow_the_field():
-    dense = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda u, v: 1.0)
-    sparse = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda u, v: 0.0)
+    dense = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda x, y, z: 1.0)
+    sparse = lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=lambda x, y, z: 0.0)
     assert dense.kept > 2 * sparse.kept
     sizes = [f.area for f in lattice(Rectangle(100, 70), P, kind="organic", cell=7.2, field=_corner_field).tool.faces()]
     assert max(sizes) > 3 * min(sizes)  # cell sizes visibly vary
