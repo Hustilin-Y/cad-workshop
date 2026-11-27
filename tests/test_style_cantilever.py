@@ -88,7 +88,7 @@ def test_lattice_clear_of_keyholes(style, down):
     """No lattice cell comes within bar_min (min_wall) of a keyhole's outline in the elevation."""
     g = CANTILEVER._frame(SPEC, P, get_dialect(style), down)
     keys = CANTILEVER._keyholes(g)
-    keepouts = [CANTILEVER._poly(CANTILEVER._keyhole_footprint(g, k, P.min_wall_mm)) for k in keys]
+    keepouts = [CANTILEVER.poly(CANTILEVER._keyhole_footprint(g, k, P.min_wall_mm)) for k in keys]
     cut = CANTILEVER._lattice_cut(g, CANTILEVER._BUILDERS[style](g), keepouts, down, g.edge)
     assert cut is not None and cut.tool is not None and cut.kept > 10
     for k in keys:

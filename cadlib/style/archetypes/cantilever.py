@@ -22,16 +22,20 @@ import math
 from dataclasses import dataclass, field, replace
 
 import numpy as np
-from build123d import Box, Compound, Cylinder, Edge, Face, Kind, Plane, Pos, Rot, Solid, Vector, Wire, extrude, fillet, offset
+from build123d import Box, Compound, Cylinder, Edge, Face, Kind, Plane, Pos, Rot, Solid, Vector, Wire, extrude, offset
 
 from cadlib import fasteners
 from cadlib.config import Profile
+from cadlib.style.archetypes.elevation import (
+    RIB_HEIGHT_LAYERS, RIB_WIDTH_WALLS, ROOF_DEG, THIN_EDGE, band, cap_face, disc, extrude_y, fuse, offset_path, one,
+    point_field, poly, round_corners, shift,
+)
 from cadlib.style.archetypes.types import Archetype, Load, Support, Tunable
 from cadlib.style.dialects import Dialect, edge_size, finish_extrusion, get_dialect
 from cadlib.style.lattice import LatticeCut, _segments, lattice
 from cadlib.style.log import note
 from cadlib.style.members import catenary, curved_beam, rib, truss
-from cadlib.style.outline import Point, arch, clip_roof, to_face
+from cadlib.style.outline import Point, arch, clip_roof
 from cadlib.style.plane import in_plane_up
 
 ALLOWED_PRINT_DOWN = ("-y", "-x")
@@ -63,13 +67,9 @@ BIO_BORDER = 2.0           # solid rim round the organic field / min_wall
 BIO_SEED = 0               # organic lattice seed: the same seed, the same bracket
 BIO_BEND = 1.5             # rounding where the web meets the arm and the eye / root_t
 BIO_OUTER = 0.8            # rounding of the other outer corners / root_t
-RIB_WIDTH_WALLS = 2.5      # relief rib width / min_wall
-RIB_HEIGHT_LAYERS = 15     # relief rib height / layer
 RIB_RAMP = 1.1             # standing up, a rib's end slopes over this many rib heights (a little under 45 deg)
-THIN_EDGE = 0.45           # an edge finish is at most this share of the thinnest member
 
 _SQRT3 = math.sqrt(3.0)
-_ROOF_DEG = 46.0  # roofs are clipped a degree steeper than the 45 degree limit, clear of rounding noise
 _RIB_MAX_SLOPE = 0.69  # standing up, a relief rib stops where its path runs flatter than ~46 degrees
 _XZ = Plane.XZ
 
@@ -164,11 +164,11 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     g = _frame(spec, p, dialect, print_down)
 
     keys = _keyholes(g)
-    keepouts = [_poly(_keyhole_footprint(g, k, p.min_wall_mm)) for k in keys]
+    keepouts = [poly(_keyhole_footprint(g, k, p.min_wall_mm)) for k in keys]
     elev = _BUILDERS[style](g)
     # A screw boss in front of each channel that pokes out of the plate, so a head never rides in the
     # open. It joins after the 2D rounding (which would round it away) and is kept out of every void.
-    bosses = [_poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True)) for k in keys if k.front > -p.min_wall_mm]
+    bosses = [poly(_keyhole_footprint(g, k, p.min_wall_mm, boss=True)) for k in keys if k.front > -p.min_wall_mm]
     voids = [] if g.up is None else [f for w in elev.solid.inner_wires() for f in _printable_void(Face(w), g.up)]
     for b in bosses:
         voids = [f for v in voids for f in (v - b).faces()]
@@ -179,29 +179,29 @@ def cantilever(style: str, spec: CantileverSpec, p: Profile, print_down: str = "
     # Lying down the voids are finished with the outline. Standing up their tent roofs keep a sharp
     # apex, so they are cut after the finish.
     if g.up is None:
-        face = _round_corners(elev.solid, g, edge)
+        face = round_corners(elev.solid, g.d, g.edge, edge)
         if bosses:
-            face = _trim(_fuse([face, *bosses]), g)
-        body = finish_extrusion(_extrude(face, spec.depth), dialect, spec.depth, print_down, p, edge)
+            face = _trim(fuse([face, *bosses]), g)
+        body = finish_extrusion(extrude_y(face, spec.depth), dialect, spec.depth, print_down, p, edge)
     else:
-        envelope = _round_corners(Face(elev.solid.outer_wire()), g, edge)
+        envelope = round_corners(Face(elev.solid.outer_wire()), g.d, g.edge, edge)
         if bosses:
-            envelope = _trim(_fuse([envelope, *bosses]), g)  # a boss on the outer outline stays too
-        body = finish_extrusion(_extrude(envelope, spec.depth), dialect, spec.depth, print_down, p, edge)
+            envelope = _trim(fuse([envelope, *bosses]), g)  # a boss on the outer outline stays too
+        body = finish_extrusion(extrude_y(envelope, spec.depth), dialect, spec.depth, print_down, p, edge)
         if voids:
-            body = _one(body - _extrude(Compound(voids), spec.depth + 2))
+            body = one(body - extrude_y(Compound(voids), spec.depth + 2))
 
     cut = _lattice_cut(g, elev, keepouts, print_down, edge)
     if cut is not None and cut.tool is not None:
-        body = _one(body - _lattice_tool(g, cut))
+        body = one(body - _lattice_tool(g, cut))
     for k in keys:
-        body = _one(body - _keyhole_tool(g, k, print_down))
+        body = one(body - _keyhole_tool(g, k, print_down))
     if spec.tip_hole is not None:
-        body = _one(body - _tip_tool(g))
+        body = one(body - _tip_tool(g))
     if dialect.relief_ribs:
         for path in elev.ribs:
             for run in _printable_runs(g, path):
-                body = _one(body + _rib_solid(g, run, g.rib_w))
+                body = one(body + _rib_solid(g, run, g.rib_w))
 
     return Archetype(
         solid=body,
@@ -274,46 +274,9 @@ def _frame(spec: CantileverSpec, p: Profile, d: Dialect, print_down: str) -> _Fr
 # --- 2D helpers -----------------------------------------------------------------------------------
 
 
-def _poly(pts: list[Point], smooth_deg: float = 12.0) -> Face:
-    """Planar face of an (x, z) outline, wound so its normal is +Y like the members' faces (they fuse).
-
-    Runs of points that turn by less than smooth_deg per vertex become one spline, so a sampled
-    arch is a few smooth edges an edge finish can follow, not dozens of facets.
-    """
-    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))
-    pts = pts if area < 0 else pts[::-1]
-    n = len(pts)
-    seg = [math.dist(pts[i], pts[(i + 1) % n]) for i in range(n)]
-    long = 2.5 * float(np.median(seg))  # a straight run (a jamb) between sampled curves stays a line
-    corners = [
-        i for i in range(n)
-        if _corner(pts[i - 1], pts[i], pts[(i + 1) % n]) > smooth_deg or max(seg[i - 1], seg[i]) > long
-    ]
-    if len(corners) < 2:
-        return to_face(pts)
-    edges = []
-    for a, b in zip(corners, corners[1:] + corners[:1]):
-        run = [pts[k % n] for k in range(a, b + (n if b <= a else 0) + 1)]
-        vecs = [Vector(u, 0, v) for u, v in run]
-        edges.append(Edge.make_line(*vecs) if len(run) == 2 else Edge.make_spline(vecs))
-    return Face(Wire(edges))
-
-
-def _disc(centre: Point, r: float) -> Face:
-    # Polygon faces from to_face wind clockwise seen along the plane normal; the disc follows suit.
-    return Face(Wire.make_circle(r, Plane(origin=(centre[0], 0, centre[1]), z_dir=(0, 1, 0))))
-
-
-def _fuse(faces: list[Face]) -> Face:
-    fused = faces[0]
-    for f in faces[1:]:
-        fused = fused + f
-    return fused
-
-
 def _trim(face, g: _Frame) -> Face:
     """Keep the part of `face` inside the bracket's box: nothing behind the wall or below z = 0."""
-    box = _poly([(-g.pt, 0), (g.R + 1, 0), (g.R + 1, g.H), (-g.pt, g.H)])
+    box = poly([(-g.pt, 0), (g.R + 1, 0), (g.R + 1, g.H), (-g.pt, g.H)])
     faces = (face & box).clean().faces()
     if len(faces) != 1:
         raise ValueError(f"the {g.d.name} elevation is not one piece ({len(faces)} pieces)")
@@ -322,11 +285,11 @@ def _trim(face, g: _Frame) -> Face:
 
 def _arm(g: _Frame) -> Face:
     x0 = -g.pt / 2
-    return _poly([(x0, g.H), (g.arm_end, g.H), (g.arm_end, g.H - g.tip_t), (x0, g.H - g.arm_t(x0))])
+    return poly([(x0, g.H), (g.arm_end, g.H), (g.arm_end, g.H - g.tip_t), (x0, g.H - g.arm_t(x0))])
 
 
 def _plate(g: _Frame) -> Face:
-    return _poly([(-g.pt, 0), (0, 0), (0, g.H), (-g.pt, g.H)])
+    return poly([(-g.pt, 0), (0, 0), (0, g.H), (-g.pt, g.H)])
 
 
 def _eye(g: _Frame) -> list[Face]:
@@ -334,11 +297,11 @@ def _eye(g: _Frame) -> list[Face]:
     if g.eye_r <= 0:
         return []
     if g.up is None:
-        return [_disc(g.tip_at, g.eye_r)]
+        return [disc(g.tip_at, g.eye_r)]
     n = 64
     circle = [(g.eye_r * math.cos(2 * math.pi * k / n), g.eye_r * math.sin(2 * math.pi * k / n)) for k in range(n)]
     down = (-g.up[0], -g.up[1])
-    return [_poly(_shift(clip_roof(circle, down, _ROOF_DEG), g.tip_at))]
+    return [poly(shift(clip_roof(circle, down, ROOF_DEG), g.tip_at))]
 
 
 Segs = tuple[np.ndarray, np.ndarray]
@@ -349,17 +312,6 @@ def _pts_of(shape, plane: Plane = _XZ) -> Segs:
 
 
 
-def _turn(pts: list[Point], up: Point) -> list[Point]:
-    """Turn points whose apex is +v so that it points along `up`."""
-    ang = math.atan2(up[1], up[0]) - math.pi / 2
-    c, s = math.cos(ang), math.sin(ang)
-    return [(c * u - s * v, s * u + c * v) for u, v in pts]
-
-
-def _shift(pts: list[Point], at: Point) -> list[Point]:
-    return [(u + at[0], v + at[1]) for u, v in pts]
-
-
 def _printable_void(void: Face, up: Point) -> list[Face]:
     """The largest part of a void under a 45 degree tent (towards `up`), so its roof needs no support.
 
@@ -368,14 +320,14 @@ def _printable_void(void: Face, up: Point) -> list[Face]:
     """
     a, b = _pts_of(void)
     span = float(np.ptp(np.concatenate([a, b]), axis=0).max()) * 4
-    t = math.tan(math.radians(_ROOF_DEG))
+    t = math.tan(math.radians(ROOF_DEG))
     ux, uz = up
     sx, sz = uz, -ux  # sideways, perpendicular to up
     best: list[Face] = []
     best_area = 0.0
     for apex in a[:: max(1, len(a) // 48)]:
         ax, az = float(apex[0]), float(apex[1])
-        tent = _poly([
+        tent = poly([
             (ax, az),
             (ax + (-ux * span + sx * span / t), az + (-uz * span + sz * span / t)),
             (ax + (-ux * span - sx * span / t), az + (-uz * span - sz * span / t)),
@@ -403,7 +355,7 @@ def _gothic(g: _Frame) -> _Elevation:
     x0 = -g.pt / 2
     xe = min(GOTHIC_STRUT_TO * g.R, g.arm_end - g.eye_r - 2 * w)
     s0, s1 = (x0, w / 2), (xe, g.H - g.arm_t(xe) / 2)
-    strut = _band(s0, s1, w)
+    strut = band(s0, s1, w)
     # The strut's upper edge, the window's floor: z on it at x.
     du, dv = s1[0] - s0[0], s1[1] - s0[1]
     slope = dv / du
@@ -420,11 +372,11 @@ def _gothic(g: _Frame) -> _Elevation:
     if spring < strut_top(span) + w:
         raise ValueError(f"the gothic window does not fit above the strut: make the bracket taller than {g.H:g} mm")
     window = [(span, strut_top(span)), *head, (0.0, strut_top(0.0))]
-    solid = _trim(_fuse([_plate(g), _arm(g), strut, _spandrel(g, s0, s1, w), *_eye(g), *_finial(g)]), g)
-    solid = max((solid - _poly(window)).faces(), key=lambda f: f.area)
+    solid = _trim(fuse([_plate(g), _arm(g), strut, _spandrel(g, s0, s1, w), *_eye(g), *_finial(g)]), g)
+    solid = max((solid - poly(window)).faces(), key=lambda f: f.area)
 
     off = g.edge + g.rib_w / 2 + 0.3  # a rib stays clear of the edge chamfer
-    hood = [(x, z) for x, z in _offset_path(head, -off)]  # the window head, offset into the spandrel
+    hood = [(x, z) for x, z in offset_path(head, -off)]  # the window head, offset into the spandrel
     strut_rib = [(0.0 + off, strut_top(off) - lift), (xe - w, strut_top(xe - w) - lift)]
     arm_rib = [(span / 2, g.H - g.arm_t(span / 2) + off)]
     x_stop = g.arm_end - g.eye_r - g.rib_w
@@ -434,17 +386,9 @@ def _gothic(g: _Frame) -> _Elevation:
     return _Elevation(solid, min(g.pt, g.tip_t, w), ribs=[hood, strut_rib, arm_rib])
 
 
-def _band(a: Point, b: Point, w: float) -> Face:
-    """A straight bar of width w from a to b."""
-    du, dv = b[0] - a[0], b[1] - a[1]
-    n = math.hypot(du, dv)
-    nu, nv = -dv / n * w / 2, du / n * w / 2
-    return _poly([(a[0] + nu, a[1] + nv), (b[0] + nu, b[1] + nv), (b[0] - nu, b[1] - nv), (a[0] - nu, a[1] - nv)])
-
-
 def _spandrel(g: _Frame, s0: Point, s1: Point, w: float) -> Face:
     """Everything above the strut, below the arm and in front of the plate (the window is cut from it)."""
-    return _poly([s0, s1, (s1[0], g.H - 0.5), (s0[0], g.H - 0.5)])
+    return poly([s0, s1, (s1[0], g.H - 0.5), (s0[0], g.H - 0.5)])
 
 
 def _finial(g: _Frame) -> list[Face]:
@@ -453,15 +397,7 @@ def _finial(g: _Frame) -> list[Face]:
         return []
     x, z = g.tip_at
     r = g.eye_r
-    return [_poly([(x + 0.4 * r, z + 0.8 * r), (g.R, z), (x + 0.4 * r, z - 0.8 * r)])]
-
-
-def _offset_path(path: list[Point], dist: float) -> list[Point]:
-    """An open (x, z) path moved sideways by dist (to the left of its travel when positive)."""
-    a = np.array(path)
-    d = np.gradient(a, axis=0)
-    d /= np.linalg.norm(d, axis=1)[:, None]
-    return [(float(x - dist * dz), float(z + dist * dx)) for (x, z), (dx, dz) in zip(a, d)]
+    return [poly([(x + 0.4 * r, z + 0.8 * r), (g.R, z), (x + 0.4 * r, z - 0.8 * r)])]
 
 
 # The gaudi arm keeps its own builder instead of members.curved_beam: curved_beam makes both sides
@@ -506,8 +442,8 @@ def _gaudi(g: _Frame) -> _Elevation:
     widths = list(np.linspace(GAUDI_BRACE_ROOT * g.t0, g.t0, len(centre)))
     brace = curved_beam(centre, widths, p=g.p)
     # The plate stops inside the arm, whose arc top then runs on from the plate's back without a step.
-    plate = _poly([(-g.pt, 0), (0, 0), (0, g.H - g.t0 / 2), (-g.pt, g.H - g.t0 / 2)])
-    solid = _trim(_fuse([plate, arm, brace, *_eye(g)]), g)
+    plate = poly([(-g.pt, 0), (0, 0), (0, g.H - g.t0 / 2), (-g.pt, g.H - g.t0 / 2)])
+    solid = _trim(fuse([plate, arm, brace, *_eye(g)]), g)
     return _Elevation(solid, min(g.pt, g.tip_t, widths[-1]))
 
 
@@ -523,7 +459,7 @@ def _hitech(g: _Frame) -> _Elevation:
         raise ValueError(f"hitech node {node_d:g} mm does not fit inside the {min(g.t0, g.tip_t):g} mm arm")
     nodes = [(0.0, bar)] + arm_nodes
     frame = truss(nodes, [(0, 1), (0, 2)], bar, node_d, p=g.p)
-    solid = _trim(_fuse([_plate(g), _arm(g), frame, *_eye(g)]), g)
+    solid = _trim(fuse([_plate(g), _arm(g), frame, *_eye(g)]), g)
     return _Elevation(solid, min(g.pt, g.tip_t, bar))
 
 
@@ -547,11 +483,11 @@ def _web(g: _Frame, sag: float, from_back: bool = False) -> tuple[Face, Face]:
     chord = math.hypot(e[0] - s[0], e[1] - s[1])
     under = catenary(s, e, sag * chord, n=16)
     top = g.H if from_back else g.H - 0.5  # from the back corner the fill also forms the plate's top
-    fill = _poly(under + [(xe, top), (s[0], top)])
+    fill = poly(under + [(xe, top), (s[0], top)])
     # Starting at the back corner, the fill already holds the plate; a plate rectangle would stick out
     # below the spline at the plate's front foot.
     parts = [_arm(g), fill, *_eye(g)] if from_back else [_plate(g), _arm(g), fill, *_eye(g)]
-    solid = _trim(_fuse(parts), g)
+    solid = _trim(fuse(parts), g)
     web = max((fill - _arm(g) - _plate(g)).faces(), key=lambda f: f.area)
     return solid, web
 
@@ -573,7 +509,7 @@ def _biomech(g: _Frame) -> _Elevation:
             return BIO_BEND * g.t0
         return wall_r if pos.X < -g.pt + 0.1 else BIO_OUTER * g.t0
 
-    solid = _round_corners(solid, g, 0.0, radius=radius)
+    solid = round_corners(solid, g.d, g.edge, 0.0, radius=radius)
     return _Elevation(solid, min(g.pt, g.tip_t), web=web)
 
 
@@ -634,7 +570,7 @@ def _keyhole_tool(g: _Frame, k: _Keyhole, print_down: str):
     plane = Plane(origin=(x_wall, 0, z_entry), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
     up = in_plane_up(plane, print_down)
     if up is not None:
-        tool = tool + extrude(_cap_face(2 * k.head_r, up, plane), amount=reach)
+        tool = tool + extrude(cap_face(2 * k.head_r, up, plane), amount=reach)
         tool = tool + _lip_ramp(g, k, up, z_entry, slot_len)
     return tool
 
@@ -649,7 +585,7 @@ def _lip_ramp(g: _Frame, k: _Keyhole, up: Point, z_entry: float, slot_len: float
     sign = 1.0 if up[0] > 0 else -1.0  # +Y up: the lip over +Y; -Y up: over -Y
     x_face = -g.pt + k.back
     x_wall = -g.pt - 1
-    t = math.tan(math.radians(_ROOF_DEG))
+    t = math.tan(math.radians(ROOF_DEG))
     rise = (x_face - x_wall) * t
     y_slot = sign * k.slot_w / 2
     tri = [
@@ -703,20 +639,8 @@ def _lattice_cut(g: _Frame, elev: _Elevation, keepouts: list[Face], print_down: 
 
 
 def _corner_field(g: _Frame, region: Face, plane: Plane, cell: float):
-    """field(u, v): 1 nearest the plate-arm corner, where the bending peaks, 0 at the far end of the region.
-
-    Normalised over the region, so the whole range of cells and bars shows across the web.
-    """
-    corner = Vector(0, 0, g.H - g.t0) - plane.origin
-    cu, cv = corner.dot(plane.x_dir), corner.dot(plane.y_dir)
-    ra, _ = _segments(region, plane)
-    dist = np.hypot(ra[:, 0] - cu, ra[:, 1] - cv)
-    near, far = float(dist.min()) + cell / 2, float(dist.max()) - cell  # cell centres stay this far in
-
-    def field(u: float, v: float) -> float:
-        return (far - math.hypot(u - cu, v - cv)) / (far - near)
-
-    return field
+    """field(u, v): 1 nearest the plate-arm corner, where the bending peaks, 0 at the far end of the region."""
+    return point_field(region, plane, (0.0, g.H - g.t0), cell)
 
 
 def _side_rect(g: _Frame, x0: float, x1: float, z0: float, z1: float) -> Face:
@@ -734,7 +658,7 @@ def _lattice_tool(g: _Frame, cut: LatticeCut):
     if g.d.name == "hitech":
         depth = HITECH_POCKET * g.spec.depth
         return extrude(Pos(0, 0.5, 0) * cut.tool, amount=depth + 0.5, dir=(0, -1, 0))
-    return _extrude(cut.tool, g.spec.depth + 2)
+    return extrude_y(cut.tool, g.spec.depth + 2)
 
 
 def _rib_solid(g: _Frame, path: list[Point], width: float) -> Solid:
@@ -748,7 +672,7 @@ def _rib_solid(g: _Frame, path: list[Point], width: float) -> Solid:
     if g.up is None:
         return solid
     for end, before in ((path[0], path[1]), (path[-1], path[-2])):
-        solid = _one(solid - _ramp_cutter(g, end, before, width, h))
+        solid = one(solid - _ramp_cutter(g, end, before, width, h))
     return solid
 
 
@@ -796,92 +720,11 @@ def _printable_runs(g: _Frame, path: list[Point]) -> list[list[Point]]:
 # --- shared tools -----------------------------------------------------------------------------------
 
 
-def _round_corners(face: Face, g: _Frame, convex: float, radius=None) -> Face:
-    """Rounded dialects round the elevation's corners in 2D, which seldom fails the way a 3D fillet does.
-
-    Concave corners (where members meet) take the full dialect edge, convex ones `convex`; a corner
-    that cannot take its radius tries half of it, then stays sharp. The vertical edges then are
-    tangent seams and the 3D finish only rounds the top and bed outlines. `radius(pos, convex)`, when
-    given, sets each corner's radius instead.
-    """
-    if g.d.edge != "fillet":
-        return face
-    for pos in [Vector(v) for v in face.vertices()]:
-        found = _corner_at(face, pos)
-        if found is None:
-            continue
-        vertex, is_convex = found
-        r = radius(pos, is_convex) if radius is not None else (convex if is_convex else g.edge)
-        if r <= 0:
-            continue
-        for size in (r, r / 2, r / 4):
-            try:
-                faces = fillet(vertex, size).faces()
-            except Exception:  # noqa: BLE001  OCCT refuses a radius that does not fit
-                continue
-            # Accept only a rounding that kept every hole and moved no more than a corner's worth of area.
-            if (
-                len(faces) == 1
-                and faces[0].is_valid
-                and len(faces[0].inner_wires()) == len(face.inner_wires())
-                and abs(faces[0].area - face.area) < size * size
-            ):
-                face = faces[0]
-                break
-    return face
-
-
-def _corner_at(face: Face, pos: Vector):
-    """(vertex, convex?) of the face's vertex at `pos` when its two edges meet at an angle, else None."""
-    vertex = next((v for v in face.vertices() if (Vector(v) - pos).length < 1e-6), None)
-    if vertex is None:
-        return None
-    dirs = []
-    for e in face.edges():
-        if (e @ 0 - pos).length < 1e-6:
-            dirs.append(e % 0)
-        elif (e @ 1 - pos).length < 1e-6:
-            dirs.append(-(e % 1))
-    if len(dirs) != 2 or dirs[0].dot(dirs[1]) < -math.cos(math.radians(1.0)):
-        return None  # tangent: the edges run on in a straight line
-    bisector = (dirs[0] + dirs[1]).normalized()
-    return vertex, face.is_inside(pos + bisector * 0.05)
-
-
-def _extrude(shape, depth: float):
-    """Through-extrusion of faces in the XZ plane over -depth/2 <= y <= depth/2 (one piece, no seam at y = 0)."""
-    solids = [Solid.extrude(Pos(0, -depth / 2, 0) * f, Vector(0, depth, 0)) for f in shape.faces()]
-    return solids[0] if len(solids) == 1 else Compound(solids)
-
-
-def _one(shape) -> Solid:
-    solids = shape.solids()
-    if len(solids) != 1:
-        raise ValueError(f"the bracket fell apart into {len(solids)} bodies")
-    return solids[0]
-
-
-def _cap_face(d: float, up: Point, plane: Plane) -> Face:
-    """The 45 degree cap that turns a round hole of diameter d into a teardrop pointing to `up`."""
-    return to_face(clip_roof(_turn(arch("round", d, d / 2, n=32), up), up, _ROOF_DEG), plane)
-
-
 def _tip_tool(g: _Frame):
     x, z = g.tip_at
     d = g.spec.depth
     hole = Pos(x, -(d / 2 + 1), z) * Rot(90, 0, 0) * fasteners.clearance_hole(g.spec.tip_hole, d + 2, g.p)
     if g.up is None:
         return hole
-    cap = _cap_face(_hole_d(g.spec.tip_hole, g.p), g.up, Plane(origin=(x, 0, z), x_dir=(1, 0, 0), z_dir=(0, -1, 0)))
-    return hole + _extrude(cap, d + 2)
-
-
-def _corner(a: Point, b: Point, c: Point) -> float:
-    d1 = (b[0] - a[0], b[1] - a[1])
-    d2 = (c[0] - b[0], c[1] - b[1])
-    n1, n2 = math.hypot(*d1), math.hypot(*d2)
-    if n1 < 1e-9 or n2 < 1e-9:
-        return 0.0
-    cos = (d1[0] * d2[0] + d1[1] * d2[1]) / (n1 * n2)
-    return math.degrees(math.acos(max(-1.0, min(1.0, cos))))
-
+    cap = cap_face(_hole_d(g.spec.tip_hole, g.p), g.up, Plane(origin=(x, 0, z), x_dir=(1, 0, 0), z_dir=(0, -1, 0)))
+    return hole + extrude_y(cap, d + 2)
