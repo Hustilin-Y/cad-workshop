@@ -24,6 +24,8 @@ INFILL_PATTERNS: Final = (
     "rectilinear", "zig-zag", "adaptivecubic", "lightning",
 )
 MAX_REASON_CHARS: Final = 200
+# Print goals for PRINT_HINTS["goal"]: one key or [primary, secondary]; bambu-mcp defines their settings.
+GOAL_KEYS: Final = ("balanced", "speed", "strength", "quality", "cheap", "light", "fit", "watertight")
 
 
 def _is_int(v: object) -> bool:
@@ -32,6 +34,17 @@ def _is_int(v: object) -> bool:
 
 def _one_of(*allowed: str) -> tuple[Callable[[object], bool], str]:
     return (lambda v: isinstance(v, str) and v in allowed), "one of " + ", ".join(allowed)
+
+
+def _is_goal(v: object) -> bool:
+    if isinstance(v, str):
+        return v in GOAL_KEYS
+    return (
+        isinstance(v, list)
+        and 1 <= len(v) <= 2
+        and all(isinstance(k, str) and k in GOAL_KEYS for k in v)
+        and len(set(v)) == len(v)
+    )
 
 
 # key -> (validator, human description of the allowed values). `material` is checked separately
@@ -44,6 +57,11 @@ HINT_KEYS: Final[dict[str, tuple[Callable[[object], bool], str]]] = {
     "brim": _one_of("none", "auto", "outer"),
     "material": (lambda v: isinstance(v, str) and bool(v.strip()), "a key of [materials.*] in printer.toml"),
     "material_reason": (
+        lambda v: isinstance(v, str) and len(v) <= MAX_REASON_CHARS,
+        f"a string of at most {MAX_REASON_CHARS} characters",
+    ),
+    "goal": (_is_goal, "one of " + ", ".join(GOAL_KEYS) + ", or a list of two different ones"),
+    "goal_reason": (
         lambda v: isinstance(v, str) and len(v) <= MAX_REASON_CHARS,
         f"a string of at most {MAX_REASON_CHARS} characters",
     ),
