@@ -162,6 +162,8 @@ Changes made here:
 
 | # | Phase | Size | Depends on |
 |---|---|---|---|
+| 7a | **Load-driven structure, part 1: FEA core, gaudi, hitech** (owner's request 2026-11-28). See below. | L (about 4 days) | phase 7, `cadlib.style` merged (PR Hustilin-Y/cad-workshop#3), scikit-fem |
+| 7b | **Load-driven structure, part 2: parametric, biomech.** See below. | M to L (about 3 days) | 7a |
 | 8 | `cadlib.shafts` (D-shaft, knurled spline, square) with a coupon | 1 day | phase 2 |
 | 9 | Snap-fit cantilever generator with a strain check per plastic | 1 day | phases 2, 4 |
 | 10 | `cadlib.hose`: hose barb, O-ring groove, seal coupon | 1 day | phases 2, 5 |
@@ -178,6 +180,39 @@ Changes made here:
 | 20 | Bearings B: coupon through the generator, `pin`, `spacer`, `ring_relief`, `pair`, `lid_tool`, `require_*` (spec steps 3, 4). The owner prints the coupon with real bearings. | 1 day | 19, phase 2 |
 | 21 | Bearings C: report line, creep WARN (uses phase 4 material data), `parts/example-bearing-hub/`, coupon values into `printer.toml`, docs (spec step 5) | 1 day | 20 |
 
+
+### 7a and 7b. Load-driven structure layer for the styles
+
+- **What:** a style's structure is laid out by the part's loads, not only drawn: the calculation
+  decides where material goes, the dialect decides what it looks like. For gaudi, hitech,
+  parametric and biomech. Gothic is excluded (owner's call). Not started.
+- **Shared mechanism (7a):**
+  1. FEA on the solid envelope of the part (scikit-fem, tetrahedral mesh) with supports and load
+     vectors from the archetypes' `Support`, `Load` and `Tunable` (and `LOADS` from phase 7):
+     per-point stress magnitude and principal stress directions.
+  2. FEA field → a per-dialect translator that lays out the dialect's own elements.
+  3. Re-run FEA on the styled part, report a safety factor.
+  4. Tune the archetype's `Tunable`s and re-check, once or twice.
+  5. Print orientation from the load vector (tension along the layers, not across).
+- **Per dialect, in this order** (the calculation gives the first two their form most directly):
+  - **gaudi (7a):** the strut or arch as a funicular (thrust) line found from the load, by the
+    hanging-chain method. The cross-section follows the force along the line.
+  - **hitech (7a):** a truss layout and member sections from member forces (ground-structure truss
+    optimisation: start from a dense set of candidate members, keep the ones that carry load).
+  - **parametric (7b):** hex grading driven by the real stress field through the lattice's
+    world-coordinate `field(x, y, z)` hook: denser cells and thicker bars where stress is high.
+  - **biomech (7b):** organic cells graded by stress magnitude and stretched along the principal
+    stress directions, so the tendon-like bars follow the load path.
+- **Keeps:** each dialect's silhouette, the 45° overhang rules, B-rep and STEP output.
+- **Notes:** printed plastic is anisotropic (interlayer strength 30 to 50% lower), so absolute safety
+  factors need coefficients from tensile coupons (a `tensile` feature in the coupon generator, part
+  of 7a). FEA runs on the PC only, not on the workshop server. Free topology optimisation stays a
+  separate, later option.
+- **Effort:** about 7 days in total, split in two: 7a (FEA core, translator interface, gaudi,
+  hitech, tensile coupon) about 4 days, 7b (parametric, biomech) about 3 days. 7a ends green on its
+  own: two dialects load-driven, the other two unchanged.
+- **Depends on:** phase 7 (loads), `cadlib.style` merged (PR Hustilin-Y/cad-workshop#3), scikit-fem
+  added with `uv add` (network only for that).
 
 ### 18. Site and terrain models seen from above
 
