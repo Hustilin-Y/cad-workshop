@@ -347,6 +347,7 @@ def _make_part(args, profile, out_dir, name, result, formats, expected_bodies, p
     from cadlib.checks import check_mesh
     from cadlib.export import export_all, export_mesh
     from cadlib.meshio import load_mesh
+    from cadlib.style.log import drain
 
     if isinstance(result, trimesh.Trimesh):
         files = export_mesh(result, out_dir, name, formats)
