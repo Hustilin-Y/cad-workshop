@@ -35,6 +35,7 @@ The first run after installing can take a few minutes on Windows while Defender 
 | `uv run cad.py check <file>` | checks of any STL, 3MF or STEP, someone else's too |
 | `uv run cad.py inspect <file>` | size, volume, bodies, base, flat faces |
 | `uv run cad.py orient <folder or file>` | best sides to print on: a table, a PNG of each and the `PRINT_DOWN` line to use |
+| `uv run cad.py coupon <feature>` | a calibration coupon in `calibration/coupons/out/`: `hole`, `press`, `slide`, `magnet` (`--size 5x4,10x3`, default 5x4, 6x2, 10x3), `thread` (`--size M8`); `--from/--to/--step` set the range |
 | `uv run cad.py kit <folder>` | a set of parts in one 3MF for Bambu Studio: every part its own object, turned with `PRINT_DOWN` on the bed, a plate each (as `<folder>/kit.py` lists them) |
 
 Build flags:
@@ -106,17 +107,23 @@ If any **error** check fails, `build` exits with code 1.
 
 ## Tolerances and calibration
 
-Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md).
+Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md). For any single fit, `uv run cad.py coupon <feature>` makes a labelled step series of it ([calibration/coupons](calibration/coupons/README.md)); the build names the `printer.toml` key the result goes to. Magnet pockets (`cadlib.magnets`) use `magnet_fit_mm` on the magnet's nominal diameter.
+
+## openGrid and Multiconnect
+
+`cadlib.opengrid` puts an openGrid interface on a part's back: a Multiconnect slot (`multiconnect_slot`, open end down, with an optional snap-in detent and entry flare) to lower onto an official Multiconnect snap in a board, or an openGrid snap (`snap`, full or Lite) to clip straight into a board cell. Cells are 28 mm (`grid_positions`). The sizes are the openGrid standard, clearances included, so they don't follow `printer.toml`. Print the test pieces (`uv run cad.py build calibration/opengrid`, about 10 g) and try them on a board first.
+
+`cadlib.gridfinity` makes Gridfinity for a drawer: `drawer_base(inside_x, inside_y, p)` fits whole 42 mm cells into the drawer's inside size, fills the rest with a solid rim, leaves `slide_fit_mm` to the walls plus `gridfinity_joint_mm` per joint, and splits the base into pieces that fit the bed (laid side by side, the drawer holds them). `bin_body(cells_x, cells_y, units, p, ...)` makes bins: compartments, a label shelf with debossed text, magnet pockets, or a solid insert with tool pockets (`Pocket`: rect, circle, slot, finger notch). The standard's sizes and clearances are kept, so bins from others fit. A model whose `build(p)` returns pieces `[(name, body, count), ...]` builds each piece (`out/<name>-<piece>.*`) and one `out/<name>.3mf` with a plate per copy.
 
 ## Layout
 
 ```
 cad.py              CLI
 printer.toml        printer, nozzles, plastics, tolerances, filament estimate
-cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config, style/
+cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, gridfinity, coupon, magnets, config, style/
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
-calibration/        tolerance gauge; fit-test/ for fits against metal
+calibration/        tolerance gauge; fit-test/ for fits against metal; opengrid/ test pieces for an openGrid board; coupons/ output of `cad.py coupon`
 templates/          templates for new part / new remix
 multiclaude/        the add-in for the multiclaude Telegram bot
 tests/              pytest
@@ -166,3 +173,5 @@ No connection to the printer, no slicing, no downloading by link, no multi-colou
 The code is under the [MIT licence](LICENSE). It does not cover:
 - **the workshop's logo** (a shiba inu with a bow tie). It is the owner's personal mark: the logo's picture and contours are not in the repository, and the logo may not be used without permission. Without the logo data `cadlib/logo.py` builds parts without it, and the logo tests are skipped;
 - **remixes of other people's models**: each model has its own licence, given in the remix's `SOURCE.md`.
+- **Gridfinity**: `cadlib/gridfinity.py` is our own code; its standard sizes are taken from [kennetek/gridfinity-rebuilt-openscad](https://github.com/kennetek/gridfinity-rebuilt-openscad) (MIT License, Copyright (c) 2023 Kenneth Hodson), itself on Gridfinity by Zachary Freedman (MIT).
+- **the openGrid and Multiconnect designs**: `cadlib/opengrid.py` is our own code, but its dimensions are derived from the modeling files of [openGrid - Wall/Desk mounting framework/ecosystem](https://makerworld.com/en/models/1179191-opengrid-wall-desk-mounting-framework-ecosystem) by David D, licensed [CC BY](https://creativecommons.org/licenses/by/4.0/). Their files are not in this repository. A part that uses the interface says so in its README: "openGrid/Multiconnect interface: dimensions from openGrid by David D, CC BY".

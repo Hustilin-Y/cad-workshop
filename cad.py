@@ -9,6 +9,7 @@
   orient <path>     best sides to print on, with PNGs and a PRINT_DOWN line
   build --all       build every part, remix and the calibration; one line each
   kit <folder>      every part of a set in one 3MF, a plate each, as <folder>/kit.py lists them
+  coupon <feature>  a calibration coupon: hole, press, slide, magnet, thread (calibration/coupons/out/)
 """
 
 from __future__ import annotations
@@ -114,6 +115,18 @@ def _parser() -> argparse.ArgumentParser:
     profile_flags(p)
     p.set_defaults(func=cmd_check)
 
+    p = sub.add_parser("coupon", help="a calibration coupon: a labelled step series of one fit")
+    p.add_argument("feature", help="hole, press, slide, magnet, thread")
+    p.add_argument("--from", dest="start", type=float, help="first value on the diameter, mm")
+    p.add_argument("--to", dest="stop", type=float, help="last value on the diameter, mm")
+    p.add_argument("--step", type=float, help="step, mm")
+    p.add_argument("--d", type=float, help="nominal diameter, mm (magnet: a measured magnet, with --h)")
+    p.add_argument("--h", type=float, help="a measured magnet's height, mm (with --d)")
+    p.add_argument("--size", help="thread: M6…M12; magnet: nominal DxH sizes, comma-separated (default 5x4,6x2,10x3)")
+    p.add_argument("--print-ready", action="store_true", help="also write the print manifest")
+    profile_flags(p)
+    p.set_defaults(func=cmd_coupon)
+
     p = sub.add_parser("inspect", help="a summary of a file")
     p.add_argument("file", type=Path)
     p.set_defaults(func=cmd_inspect)
@@ -180,7 +193,8 @@ def _restore(saved) -> None:
 
 
 def run_model(module: ModuleType, profile):
-    """Calls the model's build(p); the result is a build123d solid or a trimesh mesh."""
+    """Calls the model's build(p); the result is a build123d solid or a trimesh mesh, or a list of
+    pieces [(name, solid or mesh, count), ...] for a part printed in several pieces."""
     import trimesh
     from build123d import Shape
 
@@ -189,8 +203,28 @@ def run_model(module: ModuleType, profile):
     except ValueError as e:
         # A model's _validate(p) and cadlib.mesh operations explain the error in words; a traceback only gets in the way.
         raise UserError(f"the model did not build: {e}") from e
+    if isinstance(result, list):
+        return _check_pieces(result)
     if not isinstance(result, (Shape, trimesh.Trimesh)):
         raise UserError(f"build() returned {type(result).__name__}, expected a build123d solid or a trimesh.Trimesh")
+    return result
+
+
+def _check_pieces(result: list) -> list:
+    import trimesh
+    from build123d import Shape
+
+    if not result:
+        raise UserError("build() returned an empty list of pieces")
+    seen = set()
+    for item in result:
+        ok = (isinstance(item, tuple) and len(item) == 3 and isinstance(item[0], str)
+              and isinstance(item[1], (Shape, trimesh.Trimesh)) and isinstance(item[2], int) and item[2] >= 1)
+        if not ok:
+            raise UserError(f"build() piece {item!r:.80}: expected (name, solid or mesh, count ≥ 1)")
+        if not NAME_RE.match(item[0]) or item[0] in seen:
+            raise UserError(f"build() piece name {item[0]!r}: lowercase letters, digits and hyphens, each once")
+        seen.add(item[0])
     return result
 
 
@@ -252,12 +286,8 @@ def cmd_build(args) -> int:
 
 
 def _build(args, module) -> int:
-    import trimesh
-
-    from cadlib.checks import check_mesh
     from cadlib.estimate import estimate
-    from cadlib.export import DEFAULT_FORMATS, export_all, export_mesh
-    from cadlib.meshio import load_mesh
+    from cadlib.export import DEFAULT_FORMATS
     from cadlib.preview import render_preview
 
     t0 = time.perf_counter()
@@ -287,6 +317,44 @@ def _build(args, module) -> int:
 
     drain()  # clears leftovers of an earlier build
     result = run_model(module, profile)
+    if isinstance(result, list):
+        return _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies, print_down,
+                             section, hints, result, t0)
+    files, mesh, plate_mesh, report = _make_part(args, profile, out_dir, name, result, formats,
+                                                 expected_bodies, print_down)
+    if source:
+        _check_source(folder, source, source_hash, mesh, module, report)
+    report.add("Weight", "info", estimate(mesh, profile).summary(profile))
+
+    png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
+    print(f"  PNG  {_rel(png)}")
+    _write_web_preview([(plate_mesh, None, 0)], out_dir / f"{name}.preview.bin")
+    if getattr(args, "print_ready", False) and not report.failed:
+        if "3mf" in files:
+            _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
+            print(f"  JSON {_rel(manifest_path)}")
+        else:
+            print("  no manifest: FORMATS has no 3mf")
+    print()
+    print(report.format())
+    print()
+    elapsed = time.perf_counter() - t0
+    if report.failed:
+        print(f"BUILD FAILED ({elapsed:.1f} s): fix the FAIL lines above.")
+        return 1
+    print(f"Done in {elapsed:.1f} s. Open the STL/3MF in Bambu Studio and make sure it shows no mesh warnings.")
+    return 0
+
+
+def _make_part(args, profile, out_dir, name, result, formats, expected_bodies, print_down):
+    """Export one body, turn it for --print-ready, check it; → (files, mesh, plate mesh, report)."""
+    import trimesh
+
+    from cadlib.checks import check_mesh
+    from cadlib.export import export_all, export_mesh
+    from cadlib.meshio import load_mesh
+    from cadlib.style.log import drain
+
     if isinstance(result, trimesh.Trimesh):
         files = export_mesh(result, out_dir, name, formats)
     else:
@@ -319,38 +387,136 @@ def _build(args, module) -> int:
             if c.level == "fail" and c.name.startswith(("1.", "2.")):
                 report.add(f"3MF {c.name}", "fail", c.message)
         del mesh_3mf  # a second copy of the part: let it go before the PNG and the 3D preview
-    if source:
-        _check_source(folder, source, source_hash, mesh, module, report)
-    report.add("Weight", "info", estimate(mesh, profile).summary(profile))
+    return files, mesh, plate_mesh, report
 
-    png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
-    print(f"  PNG  {_rel(png)}")
-    _write_web_preview([(plate_mesh, None, 0)], out_dir / f"{name}.preview.bin")
-    if getattr(args, "print_ready", False) and not report.failed:
-        if "3mf" in files:
-            _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
-            print(f"  JSON {_rel(manifest_path)}")
-        else:
-            print("  no manifest: FORMATS has no 3mf")
-    print()
-    print(report.format())
-    print()
+
+def _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies, print_down, section,
+                  hints, pieces, t0) -> int:
+    """A part in several pieces: each piece built and checked as its own part (<name>-<piece>.*),
+    then <name>.3mf with a plate per copy and, for --print-ready, its manifest."""
+    from cadlib.estimate import estimate
+    from cadlib.export import write_plates_3mf
+    from cadlib.orient import print_ready
+    from cadlib.preview import render_preview
+
+    for attr in ("SOURCE", "EXPECTED_VOLUME_DELTA"):
+        if getattr(module, attr, None) is not None:
+            raise UserError(f"{attr} is not supported for a model built in pieces: build the remix whole, "
+                            "then split it in a model of its own")
+    keep = {f"{name}-{piece}" for piece, _, _ in pieces}
+    for old in out_dir.glob(f"{name}-*"):   # a piece from an earlier build that is gone now
+        stem = old.name[: -len(".preview.bin")] if old.name.endswith(".preview.bin") else old.stem
+        if old.suffix in (".stl", ".step", ".3mf", ".png", ".bin") and stem not in keep:
+            old.unlink()
+    plates, plate_parts, failed = [], [], []
+    for piece, body, count in pieces:
+        pname = f"{name}-{piece}"
+        _, mesh, plate_mesh, report = _make_part(args, profile, out_dir, pname, body, formats,
+                                                 expected_bodies, print_down)
+        if print_down is not None and plate_mesh is mesh:
+            plate_mesh = print_ready(mesh, print_down)
+        report.add("Weight", "info", estimate(mesh, profile).summary(profile))
+        png = render_preview(mesh, out_dir / f"{pname}.png", pname, section=section, print_down=print_down)
+        print(f"  PNG  {_rel(png)}")
+        _write_web_preview([(plate_mesh, None, 0)], out_dir / f"{pname}.preview.bin")
+        print()
+        print(report.format())
+        print()
+        if report.failed:
+            failed.append(pname)
+        info = {"hints": hints, "report": report}
+        for k in range(count):
+            plates.append([(pname if count == 1 else f"{pname}#{k + 1}", plate_mesh)])
+            plate_parts.append([info])
+    path = out_dir / f"{name}.3mf"
     elapsed = time.perf_counter() - t0
-    if report.failed:
-        print(f"BUILD FAILED ({elapsed:.1f} s): fix the FAIL lines above.")
+    try:
+        write_plates_3mf(plates, path, profile.build_volume_mm[:2], profile.bed_margin_mm)
+    except ValueError as e:
+        print(f"BUILD FAILED ({elapsed:.1f} s): {name}: {e}")
         return 1
-    print(f"Done in {elapsed:.1f} s. Open the STL/3MF in Bambu Studio and make sure it shows no mesh warnings.")
+    print(f"== {name}: {len(pieces)} pieces, {len(plates)} plates")
+    print(f"  3MF  {_rel(path)}  {path.stat().st_size / 1024:.0f} KB")
+    _write_pieces_preview(path)
+    if failed:
+        print(f"BUILD FAILED ({elapsed:.1f} s): {', '.join(failed)} fail their checks (FAIL lines above).")
+        return 1
+    if getattr(args, "print_ready", False):
+        _write_plates_manifest(name, path, plates, plate_parts, profile, Path(module.__file__), _overrides(args))
+        print(f"  JSON {_rel(out_dir / f'{name}.print.json')}")
+    print(f"Done in {elapsed:.1f} s. Open the 3MF in Bambu Studio and make sure it shows no mesh warnings.")
     return 0
+
+
+def _write_pieces_preview(path: Path) -> None:
+    """The 3D preview of a pieces 3MF, read back from it so the pieces lie as on its plates."""
+    import trimesh
+
+    try:
+        loaded = trimesh.load(path, process=False)
+    except Exception as e:  # noqa: BLE001 - the preview is an extra, never a reason to fail the build
+        print(f"  PREV skipped: {e}")
+        return
+    meshes = loaded.dump() if isinstance(loaded, trimesh.Scene) else [loaded]
+    _write_web_preview([(m, None, 0) for m in meshes if len(m.faces)], path.with_name(path.stem + ".preview.bin"))
+
+
+def _overrides(args) -> dict[str, str]:
+    overrides = {}
+    for item in getattr(args, "set", None) or []:
+        key, _, raw = item.partition("=")
+        overrides[key.strip()] = raw.strip()
+    return overrides
+
+
+def _write_plates_manifest(name, path, plates, plate_parts, profile, model_path, overrides) -> None:
+    """The manifest of a 3MF with several plates (a kit, a part in pieces): per plate its objects,
+    checks, hints and weight."""
+    from cadlib.estimate import estimate
+    from cadlib.manifest import build_manifest, checks_summary, merge_checks, plate_hints, write_manifest
+
+    manifest_plates = []
+    for n, (plate, used) in enumerate(zip(plates, plate_parts), start=1):
+        hints, conflicts = plate_hints([i["hints"] for i in used])
+        entry = {
+            "index": n,
+            "objects": [
+                {
+                    "name": oname,
+                    "bbox_mm": [round(float(v), 3) for v in mesh.extents],
+                    "volume_mm3": round(float(mesh.volume), 3),
+                }
+                for oname, mesh in plate
+            ],
+            "checks": merge_checks([checks_summary(i["report"]) for i in used], "max"),
+            "hints": hints,
+            "estimate": {"grams": round(sum(estimate(m, profile).printed_g for _, m in plate), 1)},
+        }
+        if conflicts:
+            entry["hint_conflicts"] = conflicts
+        manifest_plates.append(entry)
+    manifest = build_manifest(
+        kind="kit",
+        name=name,
+        file=path,
+        print_ready=True,
+        model_path=model_path,
+        overrides=overrides,
+        profile=profile,
+        plates=manifest_plates,
+        checks=merge_checks([p["checks"] for p in manifest_plates], "sum"),
+        estimate_g=round(sum(p["estimate"]["grams"] for p in manifest_plates), 1),
+        hints={},
+        original_sha256=None,
+    )
+    write_manifest(manifest, path.parent / f"{name}.print.json")
 
 
 def _write_print_manifest(args, module, name, file, mesh, profile, report, hints, original_sha256) -> None:
     from cadlib.estimate import estimate
     from cadlib.manifest import build_manifest, checks_summary, write_manifest
 
-    overrides = {}
-    for item in getattr(args, "set", None) or []:
-        key, _, raw = item.partition("=")
-        overrides[key.strip()] = raw.strip()
+    overrides = _overrides(args)
     obj = {
         "name": name,
         "bbox_mm": [round(float(v), 3) for v in mesh.extents],
@@ -469,6 +635,42 @@ def cmd_check(args) -> int:
     print(f"== {args.file.name}")
     print(report.format())
     return 1 if report.failed else 0
+
+
+def cmd_coupon(args) -> int:
+    """Builds a coupon from cadlib.coupon through the normal build: checks, PNG, files, manifest."""
+    from cadlib import coupon
+
+    profile = _profile(args)
+    opts = {"d": args.d, "h": args.h, "size": args.size}
+    try:
+        made = coupon.make(args.feature, profile, start=args.start, stop=args.stop, step=args.step, **opts)
+    except ValueError as e:
+        raise UserError(str(e)) from e
+    module = ModuleType(f"coupon_{args.feature}")
+    module.__file__ = coupon.__file__
+    module.NAME = made.name
+    module.EXPECTED_BODIES = made.bodies
+    module.PRINT_HINTS = {"goal": ["fit", "cheap"], "goal_reason": f"calibration coupon for {made.key}"}
+    module.build = lambda p: made.body
+    recorded = [f"FEATURE={args.feature}"] + [f"{k.upper()}={v}" for k, v in
+                                              {**opts, "from": args.start, "to": args.stop, "step": args.step}.items()
+                                              if v is not None]
+    build_args = argparse.Namespace(path=ROOT / "calibration" / "coupons", section=None, set=recorded,
+                                    print_ready=args.print_ready, nozzle=args.nozzle, material=args.material)
+    try:
+        code = _build(build_args, module)
+    except RuntimeError as e:
+        raise UserError(f"the coupon did not build: {e}") from e
+    if code == 0:
+        print(f"Reading it: {made.how_to}")
+        print(f"The value goes into [tolerances] {made.key} in printer.toml (tell me what fit, I'll write it).")
+        add = profile.clearance_add_mm
+        if add:
+            print(f"Printed in {profile.material}: the build adds its clearance_add_mm ({add:g}) to "
+                  f"[tolerances], so [tolerances] takes the value that fit minus {add:g}, or the difference "
+                  f"goes into [materials.{profile.material}] clearance_add_mm if the PLA value is known.")
+    return code
 
 
 def cmd_inspect(args) -> int:
@@ -631,11 +833,8 @@ def cmd_kit(args) -> int:
     import trimesh
 
     from cadlib.checks import check_mesh
-    from cadlib.estimate import estimate
     from cadlib.export import plate_origin, shape_to_mesh, write_plates_3mf
-    from cadlib.manifest import (
-        build_manifest, checks_summary, merge_checks, plate_hints, remove_stale, validate_hints, write_manifest,
-    )
+    from cadlib.manifest import remove_stale, validate_hints
     from cadlib.orient import print_ready
     from cadlib.preview import render_preview
 
@@ -734,41 +933,7 @@ def cmd_kit(args) -> int:
             print(f"  no manifest: {', '.join(failed)} {verb} checks")
             failures.append(f"{kit_name}: {', '.join(failed)} {verb} checks (see cad.py build <part>)")
             continue
-        manifest_plates = []
-        for n, (plate, used) in enumerate(zip(plates, plate_parts), start=1):
-            hints, conflicts = plate_hints([i["hints"] for i in used])
-            entry = {
-                "index": n,
-                "objects": [
-                    {
-                        "name": name,
-                        "bbox_mm": [round(float(v), 3) for v in mesh.extents],
-                        "volume_mm3": round(float(mesh.volume), 3),
-                    }
-                    for name, mesh in plate
-                ],
-                "checks": merge_checks([checks_summary(i["report"]) for i in used], "max"),
-                "hints": hints,
-                "estimate": {"grams": round(sum(estimate(m, profile).printed_g for _, m in plate), 1)},
-            }
-            if conflicts:
-                entry["hint_conflicts"] = conflicts
-            manifest_plates.append(entry)
-        manifest = build_manifest(
-            kind="kit",
-            name=kit_name,
-            file=path,
-            print_ready=True,
-            model_path=kit_file,
-            overrides={},
-            profile=profile,
-            plates=manifest_plates,
-            checks=merge_checks([p["checks"] for p in manifest_plates], "sum"),
-            estimate_g=round(sum(p["estimate"]["grams"] for p in manifest_plates), 1),
-            hints={},
-            original_sha256=None,
-        )
-        write_manifest(manifest, manifest_path)
+        _write_plates_manifest(kit_name, path, plates, plate_parts, profile, kit_file, {})
         print(f"  JSON {_rel(manifest_path)}")
     elapsed = time.perf_counter() - t0
     if failures:

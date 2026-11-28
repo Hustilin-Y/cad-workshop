@@ -28,6 +28,9 @@ class Profile:
     price_per_kg: float | None = None  # spool price; None — the report shows no cost
     currency: str = "UAH"
     infill_share: float = 0.15       # infill the weight estimate assumes
+    magnet_fit_mm: float = 0.1       # added to a disc magnet's measured diameter for its pocket
+    gridfinity_joint_mm: float = 0.1  # per joint between Gridfinity plate pieces in a drawer
+    clearance_add_mm: float = 0.0    # the plastic's addition, already inside the fits above
     max_bridge_mm: float = 10.0      # longest bridge the style tools rely on
 
     @property
@@ -83,5 +86,8 @@ def load_profile(
         price_per_kg=float(mat["price_per_kg"]) if "price_per_kg" in mat else None,
         currency=str(data.get("estimate", {}).get("currency", "UAH")),
         infill_share=float(data.get("estimate", {}).get("infill_share", 0.15)),
+        magnet_fit_mm=float(tol.get("magnet_fit_mm", 0.1)) + add,
+        gridfinity_joint_mm=float(tol.get("gridfinity_joint_mm", 0.1)) + add,
+        clearance_add_mm=add,
         max_bridge_mm=float(printer.get("max_bridge_mm", 10)),
     )

@@ -29,3 +29,15 @@ For each row find three values:
 Tell me the result, for example "holes: press .10, slide .25, free .35; pins: press .05, slide .20". I'll put the values into `printer.toml`. If holes and pins differ a lot, I'll give them separate tolerances.
 
 The first layers at the holes are usually squeezed narrower (the elephant's foot). If it's tight there and free higher up, go by the top of the hole and mention it.
+
+## Coupons for one fit
+
+`uv run cad.py coupon <feature>` makes a small labelled series of a single fit (holes for a rod, press or slide pins, magnet pockets, thread rings), see [coupons/README.md](coupons/README.md). The build ends with how to read it and the `printer.toml` key the value goes to.
+
+## openGrid test pieces
+
+`uv run cad.py build calibration/opengrid`: a back with a Multiconnect slot (snap-in detent) and a tile on an openGrid snap, about 10 g, printed as they lie. Lower the slot piece onto an official Multiconnect snap in a board, open end first: it should click into the detent and not lift off. Push the tile into a full board cell: it should click in and need a firm pull to come out. These sizes are the openGrid standard and are not tuned in `printer.toml`. If a piece is too tight or loose, check the tolerance gauge above first, then tell me what you felt.
+
+Checked 2026-11-28: PETG, 0.4 nozzle. The slot piece and the tile fit the official board, snap and connector well, no change.
+
+openGrid/Multiconnect interface: dimensions from [openGrid](https://makerworld.com/en/models/1179191-opengrid-wall-desk-mounting-framework-ecosystem) by David D, CC BY.

@@ -75,7 +75,7 @@ When the part is visible in use (brackets, hangers, arms, lamp parts) and the us
 
 ## Tolerance calibration
 
-If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
+For a single fit, `uv run cad.py coupon <feature>` (`hole`, `press`, `slide`, `magnet` (default 5x4, 6x2, 10x3, or `--size 8x2`), `thread --size M8`, range with `--from --to --step`) builds a labelled step series into `calibration/coupons/out/` and ends by naming the `printer.toml` key; read `calibration/coupons/README.md`. If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
 ## Cheat sheet
 
@@ -88,7 +88,12 @@ from cadlib.shared import load_module  # a sibling part's shared code: load_modu
 from cadlib.logo import place_logo  # the workshop logo on a flat face: raised or sunk
 from cadlib.threads import internal_thread_tube   # threads for printing; down=-1/+1: the side facing the bed gets a 45° flank
 from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
+from cadlib.magnets import magnet, pocket   # disc magnet pocket: body -= Pos(x, y, z_top) * pocket(magnet("6x2"), p)
+from cadlib import gridfinity as gf   # drawer_base(x, y, p) → pieces for build(p) to return; bin_body(cx, cy, units, p, divisions=, shelf=, label=, solid=, pockets=[gf.Pocket(...)])
+from cadlib import opengrid as og   # multiconnect_slot, snap, grid_positions, require_cells, require_back: hang a part on an openGrid board
 ```
+
+- openGrid back: the back face is Z = 0, the part below, the wall above, +Y up on the wall. `body -= Pos(x, y, z_back) * og.multiconnect_slot(26, detent=True)`: the part is lowered onto the connector and hangs on the slot's closed end, so the slot opens downward at Y = −26 (put that at the part's lower edge, the connector centre at least 10.15 below the top edge). Or `body += Pos(x, y, z_back) * og.snap()` (`lite=True` for a Lite board), one per cell from `og.grid_positions(width, height)`. A back face at the bottom (printed back down): `Rot(0, 180, 0)` first, not `Rot(180, 0, 0)`, which would also turn the slot upside down. Sizes are the standard, not the profile. Call `og.require_back(thickness, p)` and `og.require_cells(width, height)` in `_validate`. A part with it gets the openGrid attribution line in its README (see README "Licence"). Test pieces: `calibration/opengrid`.
 
 - Logo: `return place_logo(body, origin=(x, y, z), normal=(0, 0, 1), up=(0, 1, 0), height=18, mode="emboss", p=p)`, where `p` is the profile from `build(p)`: rim widths and the margin follow the nozzle. It checks there is a flat solid face under the logo and raises an error if there's an edge, a rounding or a hole.
 - Axes: Z up, the bed at Z = 0, units in mm.
