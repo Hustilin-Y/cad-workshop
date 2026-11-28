@@ -268,20 +268,20 @@ built later from these modules on request).
 
 ## Status
 
-- Phase 1 (openGrid and Multiconnect) is built and verified in code, uncommitted until the owner
-  reviews it. Its test pieces wait to be printed and tried on a board.
+- Phase 1 (openGrid and Multiconnect) is committed and checked in print (2026-11-28, PETG, 0.4
+  nozzle): the slot piece and the snap tile fit the official board, snap and connector, no change.
 - Phase 2 (coupon generator) is committed. Thread coupons cover M6 to M12 (see 11a). After it:
   `cadlib.magnets` (nominal disc sizes, pocket tool) and a multi-size `magnet` coupon.
 
 ## Open questions before phase 2 (coupon generator)
 
-1. Phase 1 test pieces: result on the board.
+1. Phase 1 test pieces: answered, they fit (see Status).
 2. Magnets: answered. Neodymium discs, nominal sizes from sellers up to 10 × 3 (`cadlib.magnets`),
    no measuring. The `magnet` coupon prints 5x4, 6x2 and 10x3 strips.
 
 ## Open questions before phase 3 (Gridfinity)
 
-1. The `magnet` coupon result (`uv run cad.py coupon magnet`).
+1. The `magnet` coupon result (`uv run cad.py coupon magnet`): printed, waits for magnets.
 2. Screws, if plates are screwed down: type and size.
 3. Gridfinity bins or plates from others at home to fit against: which ones.
 4. Sizes wanted: plates (cells or the drawer's inside size) and bins (cells, height units).

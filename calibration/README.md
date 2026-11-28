@@ -38,4 +38,6 @@ The first layers at the holes are usually squeezed narrower (the elephant's foot
 
 `uv run cad.py build calibration/opengrid`: a back with a Multiconnect slot (snap-in detent) and a tile on an openGrid snap, about 10 g, printed as they lie. Lower the slot piece onto an official Multiconnect snap in a board, open end first: it should click into the detent and not lift off. Push the tile into a full board cell: it should click in and need a firm pull to come out. These sizes are the openGrid standard and are not tuned in `printer.toml`. If a piece is too tight or loose, check the tolerance gauge above first, then tell me what you felt.
 
+Checked 2026-11-28: PETG, 0.4 nozzle. The slot piece and the tile fit the official board, snap and connector well, no change.
+
 openGrid/Multiconnect interface: dimensions from [openGrid](https://makerworld.com/en/models/1179191-opengrid-wall-desk-mounting-framework-ecosystem) by David D, CC BY.
