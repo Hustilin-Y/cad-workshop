@@ -272,7 +272,10 @@ built later from these modules on request).
   nozzle): the slot piece and the snap tile fit the official board, snap and connector, no change.
 - Phase 2 (coupon generator) is committed. Thread coupons cover M6 to M12 (see 11a). After it:
   `cadlib.magnets` (nominal disc sizes, pocket tool) and a multi-size `magnet` coupon.
-- Phase 3 (Gridfinity) is built and verified in code, uncommitted until the owner reviews it. Owner's
+- Phase 4 (materials and environment) is built and verified in code on branch
+  `claude/phase-4-materials`, uncommitted until the owner asks. HDT from Bambu data sheets, presets
+  and the 10 °C margin approved by the owner (2026-11-28).
+- Phase 3 (Gridfinity) is committed. Owner's
   calls (2026-11-28): no Gridfinity parts from others, the base fits their drawers (first one inside
   525 × 296 mm: 12 × 7 cells, 6 pieces), bins are not held down, so no magnets or screws, and no
   printed test pieces. Screw plates are left out. Spec

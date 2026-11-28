@@ -81,7 +81,7 @@ def test_validate_hints_not_a_dict():
 
 def test_validate_hints_material_must_exist():
     with pytest.raises(ValueError, match="material") as err:
-        validate_hints({"material": "TPU"}, load_profile())
+        validate_hints({"material": "NYLON"}, load_profile())
     assert "PETG" in str(err.value)
     with pytest.raises(ValueError, match="material"):
         validate_hints({"material": "petg"}, load_profile())  # keys of [materials.*] are exact

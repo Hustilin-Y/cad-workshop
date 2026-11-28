@@ -146,6 +146,11 @@ def load_model(folder: Path) -> ModuleType:
     return module
 
 
+# Declarations a model may leave out but --set can still give (cadlib.service).
+OPTIONAL_SETTINGS = ("ENVIRONMENT", "SERVICE_TEMP_C")
+_ABSENT = object()
+
+
 def apply_overrides(module: ModuleType, items: list[str] | None):
     """--set NAME=VALUE: change UPPER_CASE parameters of the model (or of a module it holds, as
     hanger.ROUND_R) for one run. Values are Python literals (45, 0.3, False, "text", (1, 2));
@@ -167,15 +172,17 @@ def apply_overrides(module: ModuleType, items: list[str] | None):
                 target = getattr(module, owner, None)
                 if not isinstance(target, ModuleType):
                     raise UserError(f"--set {name}: the model has no module {owner!r}")
-            if not attr.isupper() or not hasattr(target, attr):
+            optional = target is module and attr in OPTIONAL_SETTINGS
+            if not attr.isupper() or not (hasattr(target, attr) or optional):
                 raise UserError(f"--set {name}: no parameter {attr} in {getattr(target, '__name__', 'the model')}")
             try:
                 value = ast.literal_eval(raw.strip())
             except (ValueError, SyntaxError):
                 value = raw.strip()
-            saved.append((target, attr, getattr(target, attr)))
+            saved.append((target, attr, getattr(target, attr, _ABSENT)))
             setattr(target, attr, value)
-            print(f"  set {name} = {value!r} (was {saved[-1][2]!r})")
+            was = "not set" if saved[-1][2] is _ABSENT else repr(saved[-1][2])
+            print(f"  set {name} = {value!r} (was {was})")
     except Exception:
         _restore(saved)
         raise
@@ -184,7 +191,10 @@ def apply_overrides(module: ModuleType, items: list[str] | None):
 
 def _restore(saved) -> None:
     for target, attr, value in reversed(saved):
-        setattr(target, attr, value)
+        if value is _ABSENT:
+            delattr(target, attr)
+        else:
+            setattr(target, attr, value)
 
 
 def run_model(module: ModuleType, profile):
@@ -307,6 +317,7 @@ def _build(args, module) -> int:
         hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
     except ValueError as e:
         raise UserError(str(e)) from e
+    service = _service(module)
 
     from cadlib.style.log import drain
 
@@ -314,9 +325,10 @@ def _build(args, module) -> int:
     result = run_model(module, profile)
     if isinstance(result, list):
         return _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies, print_down,
-                             section, hints, result, t0)
+                             section, hints, result, t0, service)
     files, mesh, plate_mesh, report = _make_part(args, profile, out_dir, name, result, formats,
                                                  expected_bodies, print_down)
+    _add_service(report, service, hints, profile)
     if source:
         _check_source(folder, source, source_hash, mesh, module, report)
     report.add("Weight", "info", estimate(mesh, profile).summary(profile))
@@ -384,7 +396,7 @@ def _make_part(args, profile, out_dir, name, result, formats, expected_bodies, p
 
 
 def _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies, print_down, section,
-                  hints, pieces, t0) -> int:
+                  hints, pieces, t0, service=None) -> int:
     """A part in several pieces: each piece built and checked as its own part (<name>-<piece>.*),
     then <name>.3mf with a plate per copy and, for --print-ready, its manifest."""
     from cadlib.estimate import estimate
@@ -407,6 +419,7 @@ def _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies
                                                  expected_bodies, print_down)
         if print_down is not None and plate_mesh is mesh:
             plate_mesh = print_ready(mesh, print_down)
+        _add_service(report, service, hints, profile)
         report.add("Weight", "info", estimate(mesh, profile).summary(profile))
         png = render_preview(mesh, out_dir / f"{pname}.png", pname, section=section, print_down=print_down)
         print(f"  PNG  {_rel(png)}")
@@ -436,6 +449,25 @@ def _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies
         print(f"  JSON {_rel(out_dir / f'{name}.print.json')}")
     print(f"Done in {elapsed:.1f} s. Open the 3MF in Bambu Studio and make sure it shows no mesh warnings.")
     return 0
+
+
+def _service(module, where: str = ""):
+    """The model's ENVIRONMENT / SERVICE_TEMP_C (cadlib.service), checked before building."""
+    from cadlib.service import service_of
+
+    try:
+        return service_of(module)
+    except ValueError as e:
+        raise UserError(f"{where}{e}") from e
+
+
+def _add_service(report, service, hints, profile) -> None:
+    """The environment lines: the plastic of PRINT_HINTS if the model names one, else the build's."""
+    if service is None:
+        return
+    from cadlib.service import check_service
+
+    check_service(report, service, hints.get("material") or profile.material, profile.material)
 
 
 def _overrides(args) -> dict[str, str]:
@@ -803,6 +835,7 @@ def cmd_kit(args) -> int:
                 hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
             except ValueError as e:
                 raise UserError(f"{_rel(path)}: {e}") from e
+            service = _service(module, f"{_rel(path)}: ")
             from cadlib.style.log import drain
 
             drain()
@@ -812,6 +845,7 @@ def cmd_kit(args) -> int:
             report = check_mesh(mesh, profile, int(getattr(module, "EXPECTED_BODIES", 1)), down)
             for n in drain():
                 report.add("Style", n.level, f"{n.tool}: {n.message}")
+            _add_service(report, service, hints, profile)
             built[path] = {
                 "name": getattr(module, "NAME", path.name),
                 "folder": _rel(path),

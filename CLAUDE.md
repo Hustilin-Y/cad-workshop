@@ -20,7 +20,9 @@ Claude Code writes the model as code, builds it, checks it and hands over the fi
 
 - All tolerances, walls and bed sizes come from `printer.toml` through `cadlib`; no numbers in model code.
 - The default nozzle is 0.4; the 0.2/0.6/0.8 profiles are described. If the user says they're fitting another nozzle, change `nozzle_mm` (or pass it to the build) without editing models.
-- The default plastic is PLA; PETG, ABS and ASA are there too. For heat, outdoors or load, suggest a suitable plastic and say why.
+- The default plastic is PLA; PETG, ABS, ASA and TPU (flexible, fits not calibrated) are there too. For heat, outdoors or load, suggest a suitable plastic and say why.
+- A part that lives in heat or sun declares it: `ENVIRONMENT = "car-dash"` (presets in `printer.toml`: room, outdoor-sun, boat-sun, car-cabin, car-dash) or `SERVICE_TEMP_C = 65`. The build fails when the plastic's HDT minus the margin is below it and names the plastics that pass. Put that plastic in `PRINT_HINTS["material"]` and build with `--material` to match.
+- What not to print, even when asked: say why and suggest metal or a bought part. Oarlocks and oar pins, engine and motor mounts, lifting and hanging points for people or heavy loads, parts under pressure (gas, steam, hydraulics), moulds for lead or other molten metal.
 
 ## Output
 

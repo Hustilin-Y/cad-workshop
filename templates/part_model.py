@@ -16,6 +16,7 @@ NAME = "{{name}}"
 EXPECTED_BODIES = 1
 SECTION = None      # "x" / "y" / "z" or ("y", 12.5): a section in the preview
 PRINT_DOWN = None   # the side on the bed when printed, if not the model's bottom: "-y", "+z"… (support and overhang checks)
+# ENVIRONMENT = "car-dash"   # where it lives (printer.toml [environments]): the build checks the plastic's heat limit; or SERVICE_TEMP_C = 65
 
 # Hints for the slicing step (written into out/<name>.print.json by `build --print-ready`); all optional.
 # Keys: walls (1..10), infill_pct (0..100), infill_pattern (grid, gyroid, honeycomb, cubic, line, rectilinear,

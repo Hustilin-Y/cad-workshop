@@ -37,19 +37,48 @@ gridfinity_joint_mm = 0.1    # per joint between Gridfinity plate pieces laid in
 clearance_add_mm = 0.0
 density_g_cm3 = 1.24
 # price_per_kg = 0          # spool price in [estimate] currency; set it to see the cost in the build report
+hdt_c = 57                  # HDT ISO 75 at 0.45 MPa, Bambu PLA Basic TDS V3.0
 note = "stiff, precise; softens from 55 °C: not for a car interior or boiling water"
 [materials.PETG]
 clearance_add_mm = 0.05
 density_g_cm3 = 1.27
+hdt_c = 71                  # HDT ISO 75 at 0.45 MPa, Bambu PETG Basic TDS V3.0
 note = "tough, impact-resistant, up to ~75 °C; slightly larger clearances, strings"
 [materials.ABS]
 clearance_add_mm = 0.1
 density_g_cm3 = 1.04
+hdt_c = 87                  # HDT at 0.45 MPa, Bambu ABS (retailer listing; Bambu TDS V2.0: 84 °C at 1.8 MPa)
 note = "up to ~95 °C, shrinks ~0.5–0.7 %; print with the lid closed"
 [materials.ASA]
 clearance_add_mm = 0.1
 density_g_cm3 = 1.07
+hdt_c = 100                 # HDT ISO 75 at 0.45 MPa, Bambu ASA TDS V3.0
+uv_resistant = true
 note = "like ABS but UV-resistant, for outdoors; enclosed chamber"
+
+[materials.TPU]
+clearance_add_mm = 0.0       # not calibrated: the fits above are for rigid plastics
+density_g_cm3 = 1.22
+# no hdt_c: Bambu's TPU 95A data sheets give none, so a heat check with TPU is a warning
+note = "flexible (95A); the rigid-plastic fits do not apply and are not calibrated for it; slow, no AMS"
+
+# Where a part lives (ENVIRONMENT = "car-dash" in a model, or SERVICE_TEMP_C = 65): the build
+# fails when the plastic's hdt_c minus margin_c is below the temperature (cadlib/service.py).
+[service]
+margin_c = 10
+
+[environments.room]
+temp_c = 30
+[environments.outdoor-sun]
+temp_c = 60                  # dark surface in summer sun
+sun = true
+[environments.boat-sun]
+temp_c = 65                  # deck in the sun, reflected light
+sun = true
+[environments.car-cabin]
+temp_c = 70                  # closed car in summer
+[environments.car-dash]
+temp_c = 90                  # on the dashboard under the windscreen
 
 # Filament estimate in the build report (cadlib/estimate.py): shells + infill, ±20% of the slicer.
 [estimate]
