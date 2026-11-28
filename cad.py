@@ -94,6 +94,11 @@ def _parser() -> argparse.ArgumentParser:
     profile_flags(p)
     p.set_defaults(func=cmd_preview)
 
+    p = sub.add_parser("mesh-preview", help="the Mini App's 3D preview (out/<name>.preview.bin) from built 3MFs, no rebuild")
+    p.add_argument("path", type=Path, nargs="?", help="a model folder")
+    p.add_argument("--all", action="store_true", help="every part, remix and calibration folder")
+    p.set_defaults(func=cmd_mesh_preview)
+
     p = sub.add_parser("orient", help="best sides to print on")
     p.add_argument("path", type=Path, help="a model folder or an STL/3MF/STEP file")
     p.add_argument("--top", type=int, default=3, help="how many orientations to show (default 3)")
@@ -313,12 +318,14 @@ def _build(args, module) -> int:
             # The 3MF is checked only for its own mesh (checks 1–2); bed and support are the same as the STL's.
             if c.level == "fail" and c.name.startswith(("1.", "2.")):
                 report.add(f"3MF {c.name}", "fail", c.message)
+        del mesh_3mf  # a second copy of the part: let it go before the PNG and the 3D preview
     if source:
         _check_source(folder, source, source_hash, mesh, module, report)
     report.add("Weight", "info", estimate(mesh, profile).summary(profile))
 
     png = render_preview(mesh, out_dir / f"{name}.png", name, section=section, print_down=print_down)
     print(f"  PNG  {_rel(png)}")
+    _write_web_preview([(plate_mesh, None, 0)], out_dir / f"{name}.preview.bin")
     if getattr(args, "print_ready", False) and not report.failed:
         if "3mf" in files:
             _write_print_manifest(args, module, name, files["3mf"], plate_mesh, profile, report, hints, source_hash)
@@ -573,6 +580,49 @@ def cmd_build_all(args) -> int:
     return 1 if failed else 0
 
 
+def _write_web_preview(groups, path: Path) -> None:
+    """The Mini App's light 3D preview next to the 3MF. A failure here never fails the build."""
+    from cadlib.webpreview import write_preview
+
+    try:
+        info = write_preview(groups, path)
+    except Exception as e:  # noqa: BLE001 - the preview is an extra, the build's files are what count
+        print(f"  PREV skipped: {e}")
+        return
+    print(f"  PREV {_rel(path)}  {info.bytes / 1024:.0f} KB, {info.triangles} triangles")
+
+
+def _model_out_dirs(root: Path) -> list[Path]:
+    """The out/ folders of every part, remix and calibration under root."""
+    found = []
+    for kind in ("parts", "remix", "calibration"):
+        found += [d for d in (root / kind / "out", *sorted((root / kind).glob("*/out"))) if d.is_dir()]
+    return found
+
+
+def cmd_mesh_preview(args) -> int:
+    import trimesh
+
+    if args.all:
+        out_dirs = _model_out_dirs(ROOT)
+    elif args.path is not None:
+        out_dirs = [args.path.resolve() / "out"]
+    else:
+        raise UserError("mesh-preview: give a model folder, or --all")
+    for out_dir in out_dirs:
+        for model in sorted(out_dir.glob("*.3mf")):
+            if model.name.endswith(".gcode.3mf"):
+                continue
+            target = model.with_name(model.name[: -len(".3mf")] + ".preview.bin")
+            if target.exists() and target.stat().st_mtime >= model.stat().st_mtime:
+                print(f"  up to date: {_rel(target)}")
+                continue
+            loaded = trimesh.load(model, process=False)
+            meshes = loaded.dump() if isinstance(loaded, trimesh.Scene) else [loaded]
+            _write_web_preview([(m, None, 0) for m in meshes if len(m.faces)], target)
+    return 0
+
+
 def cmd_kit(args) -> int:
     """Build each part of every kit in <folder>/kit.py, turn it as printed and write one 3MF per kit.
 
@@ -663,6 +713,7 @@ def cmd_kit(args) -> int:
             raise UserError(f"{kit_name}: {e}") from e
         print(f"== {kit_name}: {len(plates)} plates, {sum(map(len, plates))} parts ({profile.printer}, {profile.material})")
         placed = []
+        placed_plates = []  # the plate number (1..) of each placed mesh, for the 3D preview
         for n, (plate, centres) in enumerate(zip(plates, layouts)):
             ox, oy = plate_origin(n, len(plates), bed_xy)
             print(f"  plate {n + 1}: {', '.join(name for name, _ in plate)}")
@@ -671,10 +722,12 @@ def cmd_kit(args) -> int:
                 lo, hi = m.bounds
                 m.apply_translation((ox + cx - (lo[0] + hi[0]) / 2, oy + cy - (lo[1] + hi[1]) / 2, -lo[2]))
                 placed.append(m)
+                placed_plates.append(n + 1)
         print(f"  3MF  {_rel(path)}  {path.stat().st_size / 1024:.0f} KB")
         png = render_preview(trimesh.util.concatenate(placed), out_dir / f"{kit_name}.png",
                              f"{kit_name}: the plates as in the 3MF")
         print(f"  PNG  {_rel(png)}")
+        _write_web_preview([(m, None, n) for m, n in zip(placed, placed_plates)], out_dir / f"{kit_name}.preview.bin")
         failed = sorted({i["folder"] for used in plate_parts for i in used if i["report"].failed})
         if failed:
             verb = "fails its" if len(failed) == 1 else "fail their"
