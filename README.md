@@ -78,15 +78,19 @@ If any **error** check fails, `build` exits with code 1.
 
 Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md).
 
+## openGrid and Multiconnect
+
+`cadlib.opengrid` puts an openGrid interface on a part's back: a Multiconnect slot (`multiconnect_slot`, open end down, with an optional snap-in detent and entry flare) to lower onto an official Multiconnect snap in a board, or an openGrid snap (`snap`, full or Lite) to clip straight into a board cell. Cells are 28 mm (`grid_positions`). The sizes are the openGrid standard, clearances included, so they don't follow `printer.toml`. Print the test pieces (`uv run cad.py build calibration/opengrid`, about 10 g) and try them on a board first.
+
 ## Layout
 
 ```
 cad.py              CLI
 printer.toml        printer, nozzles, plastics, tolerances, filament estimate
-cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, config
+cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, config
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
-calibration/        tolerance gauge; fit-test/ for fits against metal
+calibration/        tolerance gauge; fit-test/ for fits against metal; opengrid/ test pieces for an openGrid board
 templates/          templates for new part / new remix
 multiclaude/        the add-in for the multiclaude Telegram bot
 tests/              pytest
@@ -134,3 +138,4 @@ No connection to the printer, no slicing, no downloading by link, no multi-colou
 The code is under the [MIT licence](LICENSE). It does not cover:
 - **the workshop's logo** (a shiba inu with a bow tie). It is the owner's personal mark: the logo's picture and contours are not in the repository, and the logo may not be used without permission. Without the logo data `cadlib/logo.py` builds parts without it, and the logo tests are skipped;
 - **remixes of other people's models**: each model has its own licence, given in the remix's `SOURCE.md`.
+- **the openGrid and Multiconnect designs**: `cadlib/opengrid.py` is our own code, but its dimensions are derived from the modeling files of [openGrid - Wall/Desk mounting framework/ecosystem](https://makerworld.com/en/models/1179191-opengrid-wall-desk-mounting-framework-ecosystem) by David D, licensed [CC BY](https://creativecommons.org/licenses/by/4.0/). Their files are not in this repository. A part that uses the interface says so in its README: "openGrid/Multiconnect interface: dimensions from openGrid by David D, CC BY".
