@@ -9,6 +9,7 @@
   orient <path>     best sides to print on, with PNGs and a PRINT_DOWN line
   build --all       build every part, remix and the calibration; one line each
   kit <folder>      every part of a set in one 3MF, a plate each, as <folder>/kit.py lists them
+  coupon <feature>  a calibration coupon: hole, press, slide, magnet, thread (calibration/coupons/out/)
 """
 
 from __future__ import annotations
@@ -108,6 +109,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--down", help="which side of the model goes on the bed: +x/-x/+y/-y/+z/-z (default -z, as in the file)")
     profile_flags(p)
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("coupon", help="a calibration coupon: a labelled step series of one fit")
+    p.add_argument("feature", help="hole, press, slide, magnet, thread")
+    p.add_argument("--from", dest="start", type=float, help="first value on the diameter, mm")
+    p.add_argument("--to", dest="stop", type=float, help="last value on the diameter, mm")
+    p.add_argument("--step", type=float, help="step, mm")
+    p.add_argument("--d", type=float, help="nominal diameter, mm (magnet: measured, required)")
+    p.add_argument("--h", type=float, help="magnet height, mm (measured, required for magnet)")
+    p.add_argument("--size", help="thread size for the thread coupon, e.g. M8")
+    p.add_argument("--print-ready", action="store_true", help="also write the print manifest")
+    profile_flags(p)
+    p.set_defaults(func=cmd_coupon)
 
     p = sub.add_parser("inspect", help="a summary of a file")
     p.add_argument("file", type=Path)
@@ -457,6 +470,42 @@ def cmd_check(args) -> int:
     print(f"== {args.file.name}")
     print(report.format())
     return 1 if report.failed else 0
+
+
+def cmd_coupon(args) -> int:
+    """Builds a coupon from cadlib.coupon through the normal build: checks, PNG, files, manifest."""
+    from cadlib import coupon
+
+    profile = _profile(args)
+    opts = {"d": args.d, "h": args.h, "size": args.size}
+    try:
+        made = coupon.make(args.feature, profile, start=args.start, stop=args.stop, step=args.step, **opts)
+    except ValueError as e:
+        raise UserError(str(e)) from e
+    module = ModuleType(f"coupon_{args.feature}")
+    module.__file__ = coupon.__file__
+    module.NAME = made.name
+    module.EXPECTED_BODIES = made.bodies
+    module.PRINT_HINTS = {"goal": ["fit", "cheap"], "goal_reason": f"calibration coupon for {made.key}"}
+    module.build = lambda p: made.body
+    recorded = [f"FEATURE={args.feature}"] + [f"{k.upper()}={v}" for k, v in
+                                              {**opts, "from": args.start, "to": args.stop, "step": args.step}.items()
+                                              if v is not None]
+    build_args = argparse.Namespace(path=ROOT / "calibration" / "coupons", section=None, set=recorded,
+                                    print_ready=args.print_ready, nozzle=args.nozzle, material=args.material)
+    try:
+        code = _build(build_args, module)
+    except RuntimeError as e:
+        raise UserError(f"the coupon did not build: {e}") from e
+    if code == 0:
+        print(f"Reading it: {made.how_to}")
+        print(f"The value goes into [tolerances] {made.key} in printer.toml (tell me what fit, I'll write it).")
+        add = profile.clearance_add_mm
+        if add:
+            print(f"Printed in {profile.material}: the build adds its clearance_add_mm ({add:g}) to "
+                  f"[tolerances], so [tolerances] takes the value that fit minus {add:g}, or the difference "
+                  f"goes into [materials.{profile.material}] clearance_add_mm if the PLA value is known.")
+    return code
 
 
 def cmd_inspect(args) -> int:

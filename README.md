@@ -32,6 +32,7 @@ The first run after installing can take a few minutes on Windows while Defender 
 | `uv run cad.py check <file>` | checks of any STL, 3MF or STEP, someone else's too |
 | `uv run cad.py inspect <file>` | size, volume, bodies, base, flat faces |
 | `uv run cad.py orient <folder or file>` | best sides to print on: a table, a PNG of each and the `PRINT_DOWN` line to use |
+| `uv run cad.py coupon <feature>` | a calibration coupon in `calibration/coupons/out/`: `hole`, `press`, `slide`, `magnet` (`--d`, `--h` measured), `thread` (`--size M8`); `--from/--to/--step` set the range |
 | `uv run cad.py kit <folder>` | a set of parts in one 3MF for Bambu Studio: every part its own object, turned with `PRINT_DOWN` on the bed, a plate each (as `<folder>/kit.py` lists them) |
 
 Build flags:
@@ -76,7 +77,7 @@ If any **error** check fails, `build` exits with code 1.
 
 ## Tolerances and calibration
 
-Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md).
+Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, ASA) profiles are in [printer.toml](printer.toml). The values are starting points. To fit them to your printer, print the tolerance gauge (`uv run cad.py build calibration`) for plastic-in-plastic fits and the fit-test plate (`uv run cad.py build calibration/fit-test`) for screws, shafts and threads against metal, and follow [the instructions](calibration/README.md). For any single fit, `uv run cad.py coupon <feature>` makes a labelled step series of it ([calibration/coupons](calibration/coupons/README.md)); the build names the `printer.toml` key the result goes to. Magnet pockets use `magnet_fit_mm` on the measured magnet diameter.
 
 ## openGrid and Multiconnect
 
@@ -87,10 +88,10 @@ Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, A
 ```
 cad.py              CLI
 printer.toml        printer, nozzles, plastics, tolerances, filament estimate
-cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, config
+cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, coupon, config
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
-calibration/        tolerance gauge; fit-test/ for fits against metal; opengrid/ test pieces for an openGrid board
+calibration/        tolerance gauge; fit-test/ for fits against metal; opengrid/ test pieces for an openGrid board; coupons/ output of `cad.py coupon`
 templates/          templates for new part / new remix
 multiclaude/        the add-in for the multiclaude Telegram bot
 tests/              pytest

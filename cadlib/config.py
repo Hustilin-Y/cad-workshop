@@ -28,6 +28,8 @@ class Profile:
     price_per_kg: float | None = None  # spool price; None — the report shows no cost
     currency: str = "UAH"
     infill_share: float = 0.15       # infill the weight estimate assumes
+    magnet_fit_mm: float = 0.1       # added to a disc magnet's measured diameter for its pocket
+    clearance_add_mm: float = 0.0    # the plastic's addition, already inside the fits above
 
     @property
     def usable_volume_mm(self) -> tuple[float, float, float]:
@@ -82,4 +84,6 @@ def load_profile(
         price_per_kg=float(mat["price_per_kg"]) if "price_per_kg" in mat else None,
         currency=str(data.get("estimate", {}).get("currency", "UAH")),
         infill_share=float(data.get("estimate", {}).get("infill_share", 0.15)),
+        magnet_fit_mm=float(tol.get("magnet_fit_mm", 0.1)) + add,
+        clearance_add_mm=add,
     )

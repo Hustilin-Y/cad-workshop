@@ -66,7 +66,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 
 ## Tolerance calibration
 
-If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
+For a single fit, `uv run cad.py coupon <feature>` (`hole`, `press`, `slide`, `magnet --d 6 --h 2`, `thread --size M8`, range with `--from --to --step`) builds a labelled step series into `calibration/coupons/out/` and ends by naming the `printer.toml` key; read `calibration/coupons/README.md`. If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
 ## Cheat sheet
 

@@ -37,6 +37,8 @@ ROOT_W = 0.875            # internal thread: tooth width at the root (major Ø) 
 EXT_CREST_W = 0.125       # external thread: tooth width at the crest (major Ø): P/8
 PRINT_CREST_W = 0.125     # printable internal tooth: width at the crest; sets the tooth height
 EMBED = 0.2               # the turn's root goes into the wall: a volume merge, not a touch
+# ISO metric coarse pitches, ISO 261:1998 (series 1), mm.
+ISO_COARSE_PITCH = {"M3": 0.5, "M4": 0.7, "M5": 0.8, "M6": 1.0, "M8": 1.25, "M10": 1.5, "M12": 1.75}
 FLANK_PAST = 0.05         # the flanks run this far into the wall before the root turns square: a corner
                           # exactly on the wall's cylinder sweeps into a tangent edge and the fuse drops the turns
 
