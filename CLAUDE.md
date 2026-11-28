@@ -39,6 +39,7 @@ Claude Code writes the model as code, builds it, checks it and hands over the fi
 - openGrid snaps and Multiconnect slots on a part's back only through `cadlib.opengrid`, never drawn by hand: its sizes are the openGrid standard (CC BY, David D), and a part that uses them carries the attribution line in its README.
 - Lettering on parts only through `cadlib.text.label(text, height_mm)`: the font comes from a package, not the system, so it's the same on Windows and Linux. A bare build123d `Text` on Linux without Arial gives an open mesh.
 - A fit value nobody has printed yet comes from a coupon: `uv run cad.py coupon <feature>` (hole, press, slide, magnet, thread). Magnet pockets come from `cadlib.magnets`. A new kind of fit gets a feature in `cadlib/coupon.py`, not a hand-made test plate.
+- For visible parts prefer the `cadlib.style` tools (dialects, lattices, archetypes) and agree the dialect with the owner first: gothic, gaudi, hitech, parametric or biomech. The cosmetics notes show under "Style" in the report.
 - Check printability in the model's `_validate(p)` (walls ≥ `p.min_wall_mm`, room for each hole) with a clear error.
 - After every build show the user the PNG preview and the check report before calling the task done.
 - Make edits from comments through parameters rather than by rewriting geometry where you can. To try a variant before changing the file: `build <folder> --set NAME=VALUE`.

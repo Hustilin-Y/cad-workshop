@@ -24,6 +24,7 @@ viewer = [  # live 3D view, PC only: uv run --group viewer python -m ocp_viewer
 ]
 dev = [
     "pytest>=9.2.0",
+    "rtree>=1.4.1",
 ]
 
 [tool.uv]
@@ -32,3 +33,6 @@ link-mode = "copy"   # the uv cache and the project are on different drives, har
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "slow: heavy style tests (every dialect, long spans, build-time budgets); run by default, leave out with -m \"not slow\"",
+]

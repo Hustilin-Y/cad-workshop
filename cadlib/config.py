@@ -31,6 +31,7 @@ class Profile:
     magnet_fit_mm: float = 0.1       # added to a disc magnet's measured diameter for its pocket
     gridfinity_joint_mm: float = 0.1  # per joint between Gridfinity plate pieces in a drawer
     clearance_add_mm: float = 0.0    # the plastic's addition, already inside the fits above
+    max_bridge_mm: float = 10.0      # longest bridge the style tools rely on
 
     @property
     def usable_volume_mm(self) -> tuple[float, float, float]:
@@ -88,4 +89,5 @@ def load_profile(
         magnet_fit_mm=float(tol.get("magnet_fit_mm", 0.1)) + add,
         gridfinity_joint_mm=float(tol.get("gridfinity_joint_mm", 0.1)) + add,
         clearance_add_mm=add,
+        max_bridge_mm=float(printer.get("max_bridge_mm", 10)),
     )

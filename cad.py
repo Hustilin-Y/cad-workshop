@@ -308,6 +308,9 @@ def _build(args, module) -> int:
     except ValueError as e:
         raise UserError(str(e)) from e
 
+    from cadlib.style.log import drain
+
+    drain()  # clears leftovers of an earlier build
     result = run_model(module, profile)
     if isinstance(result, list):
         return _build_pieces(args, module, profile, out_dir, name, formats, expected_bodies, print_down,
@@ -368,6 +371,8 @@ def _make_part(args, profile, out_dir, name, result, formats, expected_bodies, p
             plate_mesh = turned
             print(f"  print-ready: STL/3MF turned with {label_for(down_vector(print_down))} on the bed; STEP as designed")
     report = check_mesh(mesh, profile, expected_bodies, print_down)
+    for n in drain():
+        report.add("Style", n.level, f"{n.tool}: {n.message}")
     if "3mf" in files and "stl" in files:
         mesh_3mf = load_mesh(files["3mf"])
         for c in check_mesh(mesh_3mf, profile, expected_bodies).checks:
@@ -797,10 +802,15 @@ def cmd_kit(args) -> int:
                 hints = validate_hints(getattr(module, "PRINT_HINTS", None), profile)
             except ValueError as e:
                 raise UserError(f"{_rel(path)}: {e}") from e
+            from cadlib.style.log import drain
+
+            drain()
             result = run_model(module, profile)
             mesh = result if isinstance(result, trimesh.Trimesh) else shape_to_mesh(result)
             down = _print_down(getattr(module, "PRINT_DOWN", None), f"{_rel(path)}: PRINT_DOWN")
             report = check_mesh(mesh, profile, int(getattr(module, "EXPECTED_BODIES", 1)), down)
+            for n in drain():
+                report.add("Style", n.level, f"{n.tool}: {n.message}")
             built[path] = {
                 "name": getattr(module, "NAME", path.name),
                 "folder": _rel(path),

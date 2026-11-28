@@ -8,6 +8,7 @@ build_volume_mm = [256, 256, 256]   # Bambu Lab's official figures
 bed_margin_mm = 5                   # margin to the bed's edge in the size check
 nozzle_mm = 0.4                     # the nozzle in use; switch to one of [nozzles.*]
 material = "PLA"                    # default plastic; switch to one of [materials.*]
+max_bridge_mm = 10                  # longest bridge the style tools rely on
 
 # Nozzle profiles. min_wall = 3 perimeters; follows nozzle_mm above.
 [nozzles."0.2"]
