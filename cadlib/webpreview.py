@@ -24,6 +24,7 @@ MAGIC = b"CWPV"
 VERSION = 1
 MAX_TRIANGLES = 60_000
 MIN_GROUP_TRIANGLES = 12
+DECIMATE_TRIES = 3
 DEFAULT_RGBA = (200, 200, 200, 255)
 _HEADER = struct.Struct("<4sHH6fI")
 _GROUP = struct.Struct("<4BHHII")
@@ -113,18 +114,45 @@ def _clean(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
 
 
 def _decimate(mesh: trimesh.Trimesh, target: int) -> trimesh.Trimesh:
-    """At most target faces, by quadric decimation (fast-simplification), the bbox kept as it was."""
+    """At most target faces: quadric decimation (fast-simplification), at most DECIMATE_TRIES passes,
+    then vertex clustering for what it couldn't reduce (it stalls on some downloaded meshes, such as
+    a 1.29M-face remix that stopped at 224k)."""
     if len(mesh.faces) <= target:
         return mesh
     import fast_simplification
 
-    reduction = 1.0 - target / len(mesh.faces)
-    points, faces = fast_simplification.simplify(
-        mesh.vertices.astype(np.float32), mesh.faces.astype(np.int64), target_reduction=reduction)
-    reduced = trimesh.Trimesh(points, faces, process=False)
-    while len(reduced.faces) > target:  # the library may overshoot a little
-        reduction = 1.0 - target / len(reduced.faces) * 0.98
-        points, faces = fast_simplification.simplify(
-            reduced.vertices.astype(np.float32), reduced.faces.astype(np.int64), target_reduction=reduction)
-        reduced = trimesh.Trimesh(points, faces, process=False)
-    return reduced
+    points, faces = mesh.vertices.astype(np.float32), mesh.faces.astype(np.int64)
+    for _ in range(DECIMATE_TRIES):
+        reduction = 1.0 - target / len(faces) * (0.98 if len(faces) < len(mesh.faces) else 1.0)
+        before = len(faces)
+        points, faces = fast_simplification.simplify(points, faces, target_reduction=reduction)
+        points, faces = np.asarray(points, dtype=np.float32), np.asarray(faces, dtype=np.int64)
+        if len(faces) <= target or len(faces) > before * 0.95:  # done, or it stopped reducing
+            break
+    if len(faces) > target:
+        points, faces = _cluster(points, faces, target)
+    return trimesh.Trimesh(points, faces, process=False)
+
+
+def _cluster(points: np.ndarray, faces: np.ndarray, target: int) -> tuple[np.ndarray, np.ndarray]:
+    """Vertex clustering on a grid, the cell grown until at most target faces are left: each cell's
+    vertices merge into their mean, faces that collapse go. Coarse, but it always ends."""
+    lo = points.min(axis=0)
+    span = float(np.max(points.max(axis=0) - lo)) or 1.0
+    cells = max(16, int(np.sqrt(target) * 2))
+    while True:
+        cell = span / cells
+        keys = np.floor((points - lo) / cell).astype(np.int64)
+        _, inverse = np.unique(keys, axis=0, return_inverse=True)
+        inverse = inverse.reshape(-1)
+        merged = inverse[faces]
+        keep = (merged[:, 0] != merged[:, 1]) & (merged[:, 1] != merged[:, 2]) & (merged[:, 0] != merged[:, 2])
+        merged = merged[keep]
+        if len(merged) <= target or cells <= 16:
+            count = inverse.max() + 1
+            sums = np.zeros((count, 3))
+            np.add.at(sums, inverse, points)
+            centres = sums / np.bincount(inverse, minlength=count)[:, None]
+            used, remap = np.unique(merged, return_inverse=True)
+            return centres[used].astype(np.float32), remap.reshape(-1, 3)
+        cells = int(cells * 0.8)
