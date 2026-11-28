@@ -27,7 +27,7 @@ layer_mm = 0.4
 hole_clearance_mm = 0.2      # added to the diameter of a hole for a shaft/screw
 press_fit_mm = 0.05
 slide_fit_mm = 0.3
-magnet_fit_mm = 0.1          # on a disc magnet's measured Ø for its pocket; starting guess until the magnet coupon
+magnet_fit_mm = 0.1          # on a disc magnet's nominal Ø for its pocket (cadlib.magnets); starting guess until the magnet coupon
 thread_clearance_mm = 0.35   # on the major Ø of a printed nut; fit-test M8 rings (ISO profile): 0.25 tight, 0.4 runs well
 
 # Per-plastic additions to the tolerances (added to [tolerances]) and hints.

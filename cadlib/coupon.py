@@ -18,6 +18,7 @@ from typing import Callable
 from build123d import Box, Cylinder, Part, Pos, extrude
 
 from .config import Profile
+from .magnets import Magnet, magnet, pocket_depth
 from .text import label
 from .threads import ISO_COARSE_PITCH, internal_thread_tube
 
@@ -32,6 +33,7 @@ KEY_RING_WALL = 3.0    # wall of the press/slide key's ring
 KEY_BAR_W = 10.0
 TAB_L = 12.0           # thread ring's label tab, beyond the ring
 TAB_T = 2.0
+DEFAULT_MAGNETS = ("5x4", "6x2", "10x3")   # the owner's range: tall small, Gridfinity's 6x2, the largest
 PUSH_LEDGE = 0.5       # a magnet pocket keeps at least this ledge per side around the push-out hole
 # Printed internal threads below M6 don't build yet (cadlib.threads cannot fuse the turns at those
 # pitches); the thread coupon offers the sizes that do.
@@ -159,29 +161,55 @@ def magnet_floor(p: Profile) -> float:
     return p.min_wall_mm
 
 
-def _magnet(cs: list[float], p: Profile, d: float | None = None, h: float | None = None, **_) -> Coupon:
-    if d is None or h is None:
-        raise ValueError("magnet coupon: measure the magnet's diameter and height with a caliper and pass "
-                         "--d and --h (sizes differ between sellers)")
-    depth = math.ceil(h / p.layer_mm - 1e-9) * p.layer_mm
+def _magnet_strip(cs: list[float], p: Profile, m: Magnet) -> Part:
+    """One strip for one magnet size: its name in the first cell, then a pocket d + c per value."""
+    depth = pocket_depth(m, p)
     floor = magnet_floor(p)
     t = floor + depth
-    push_d = min(max(2.0, d / 3), d - 2 * PUSH_LEDGE)   # small magnets keep a ledge to rest on
-    widest = d + max(cs)
-    cell_w = max(widest, 2 * LABEL_SIZE) + 2 * GAP
+    push_d = min(max(2.0, m.d / 3), m.d - 2 * PUSH_LEDGE)   # small magnets keep a ledge to rest on
+    widest = m.d + max(cs)
+    cell_w = max(widest, 3 * LABEL_SIZE) + 2 * GAP
     cell_d = widest + LABEL_GAP + LABEL_SIZE + 2 * GAP
-    xy = _grid(len(cs), cell_w, cell_d, p)
+    xy = _grid(len(cs) + 1, cell_w, cell_d, p)
+    name_xy, xy = xy[0], xy[1:]
     hole_y = (cell_d - 2 * GAP) / 2 - widest / 2
     label_y = hole_y - widest / 2 - LABEL_GAP - LABEL_SIZE / 2
-    body = _plate(xy, cell_w, cell_d, t)
-    body -= [Pos(x, y + hole_y, floor + depth / 2 + 0.5) * Cylinder((d + c) / 2, depth + 1) for c, (x, y) in zip(cs, xy)]
+    body = _plate([name_xy] + xy, cell_w, cell_d, t)
+    body -= [Pos(x, y + hole_y, floor + depth / 2 + 0.5) * Cylinder((m.d + c) / 2, depth + 1) for c, (x, y) in zip(cs, xy)]
     if push_d >= 2 * p.nozzle_mm:   # below about two lines wide it would print closed anyway
         body -= [Pos(x, y + hole_y, t / 2) * Cylinder(push_d / 2, t + 1) for x, y in xy]
     body += _labels(cs, [(x, y + label_y) for x, y in xy], t, p)
-    return Coupon(f"coupon-magnet-d{d:g}x{h:g}", body, 1, "magnet_fit_mm",
-                  "Press a magnet into each pocket by hand, then push it out through the hole underneath. "
-                  "The c where it goes in with a firm push and does not fall out when the coupon is turned "
-                  "over goes into magnet_fit_mm.")
+    body += extrude(Pos(name_xy[0], name_xy[1] + hole_y, t) * label(m.name, LABEL_SIZE), amount=_relief(p))
+    return body
+
+
+def _magnet(cs: list[float], p: Profile, d: float | None = None, h: float | None = None,
+            size: str | None = None, **_) -> Coupon:
+    if (d is None) != (h is None):
+        raise ValueError("magnet coupon: --d and --h go together (a measured magnet), or use --size 6x2")
+    if d is not None and size is not None:
+        raise ValueError("magnet coupon: --size or --d/--h, not both")
+    if d is not None:
+        mags, name = [Magnet(d, h)], f"coupon-magnet-d{d:g}x{h:g}"
+    else:
+        mags = [magnet(s) for s in (size.split(",") if size else DEFAULT_MAGNETS)]
+        name = "coupon-magnet-" + "-".join(m.name for m in mags)
+    strips, y = [], 0.0
+    for m in mags:
+        strip = _magnet_strip(cs, p, m)
+        bb = strip.bounding_box()
+        strips.append(Pos(-bb.center().X, y - bb.max.Y, 0) * strip)
+        y -= bb.size.Y + BODY_GAP
+    if -y - BODY_GAP > p.usable_volume_mm[1]:
+        raise ValueError(f"{len(mags)} magnet sizes don't fit on the bed in one coupon: split them with --size")
+    body = strips[0]
+    for strip in strips[1:]:
+        body += strip
+    return Coupon(name, body, len(mags), "magnet_fit_mm",
+                  "Press a magnet into each pocket of its strip by hand (the size is written at the start), "
+                  "then push it out through the hole underneath. The c where it goes in with a firm push and "
+                  "does not fall out when the coupon is turned over goes into magnet_fit_mm. If the sizes "
+                  "disagree by more than 0.05, tell me both.")
 
 
 def _thread(cs: list[float], p: Profile, size: str = "M8", **_) -> Coupon:
@@ -215,7 +243,7 @@ FEATURES: dict[str, Feature] = {
     "hole": Feature((0.0, 0.5, 0.1), "hole_clearance_mm", _hole, ("d",)),
     "press": Feature((0.0, 0.25, 0.05), "press_fit_mm", _pin_hole("press"), ("d",)),
     "slide": Feature((0.15, 0.5, 0.05), "slide_fit_mm", _pin_hole("slide"), ("d",)),
-    "magnet": Feature((0.0, 0.3, 0.05), "magnet_fit_mm", _magnet, ("d", "h")),
+    "magnet": Feature((0.0, 0.3, 0.05), "magnet_fit_mm", _magnet, ("d", "h", "size")),
     "thread": Feature((0.2, 0.5, 0.05), "thread_clearance_mm", _thread, ("size",)),
 }
 

@@ -87,7 +87,7 @@ Changes made here:
 
 - **Goal:** a minimal Gridfinity of our own with our checks.
 - **Scope:** `cadlib/gridfinity.py`: baseplate N×M (plain, magnet, screw), bin base, stacking lip,
-  label shelf through `label()`, magnet pocket (measured magnet Ø plus `magnet_fit_mm` in `printer.toml`, the value from
+  label shelf through `label()`, magnet pocket (`cadlib.magnets.pocket`: nominal magnet Ø plus `magnet_fit_mm`, the value from
   the phase 2 `magnet` coupon), test pieces in `calibration/gridfinity/` (a 1×1 bin, a 2×2 plate),
   splitting a plate into pieces
   that fit the bed (5×5 maximum). A generic "grid of cups in a given compartment" generator (MEIHO
@@ -235,18 +235,18 @@ built later from these modules on request).
 
 - Phase 1 (openGrid and Multiconnect) is built and verified in code, uncommitted until the owner
   reviews it. Its test pieces wait to be printed and tried on a board.
-- Phase 2 (coupon generator) is built and verified in code, uncommitted. Thread coupons cover
-  M6 to M12 (see 11a).
+- Phase 2 (coupon generator) is committed. Thread coupons cover M6 to M12 (see 11a). After it:
+  `cadlib.magnets` (nominal disc sizes, pocket tool) and a multi-size `magnet` coupon.
 
 ## Open questions before phase 2 (coupon generator)
 
 1. Phase 1 test pieces: result on the board.
-2. Magnets: Ø and thickness measured with a caliper on several pieces (sets the `magnet` coupon's
-   steps).
+2. Magnets: answered. Neodymium discs, nominal sizes from sellers up to 10 × 3 (`cadlib.magnets`),
+   no measuring. The `magnet` coupon prints 5x4, 6x2 and 10x3 strips.
 
 ## Open questions before phase 3 (Gridfinity)
 
-1. The `magnet` coupon result.
+1. The `magnet` coupon result (`uv run cad.py coupon magnet`).
 2. Screws, if plates are screwed down: type and size.
 3. Gridfinity bins or plates from others at home to fit against: which ones.
 4. Sizes wanted: plates (cells or the drawer's inside size) and bins (cells, height units).

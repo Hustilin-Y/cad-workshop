@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from cadlib import coupon as cp
+from cadlib import magnets as mg
 from cadlib.config import load_profile
 from cadlib.export import shape_to_mesh
 from cadlib.preview import section_loops
@@ -97,21 +98,39 @@ def test_slide_defaults():
 # --- magnet --------------------------------------------------------------------------------------
 
 
-def test_magnet_needs_measurements():
-    with pytest.raises(ValueError, match="caliper"):
-        cp.make("magnet", P)
-    with pytest.raises(ValueError, match="caliper"):
+def test_magnet_d_and_h_go_together():
+    with pytest.raises(ValueError, match="--d and --h"):
         cp.make("magnet", P, d=6)
+    with pytest.raises(ValueError, match="--size or"):
+        cp.make("magnet", P, d=6, h=2, size="5x4")
+
+
+def test_magnet_default_sizes_one_strip_each():
+    c = cp.make("magnet", P)
+    assert c.name == "coupon-magnet-5x4-6x2-10x3" and c.bodies == 3 == len(c.body.solids())
+    cs = cp.values(0.0, 0.3, 0.05)
+    floor = cp.magnet_floor(P)
+    for strip, (d, h) in zip(sorted(c.body.solids(), key=lambda s: -s.bounding_box().center().Y),
+                             [(5, 4), (6, 2), (10, 3)]):
+        depth = mg.pocket_depth(mg.Magnet(d, h), P)
+        assert strip.bounding_box().min.Z == pytest.approx(0, abs=0.01)
+        assert _hole_diameters(strip, floor + depth / 2) == pytest.approx([d + x for x in cs], abs=0.05)
+        assert min(_hole_diameters(strip, floor + depth - 0.05)) == pytest.approx(d, abs=0.05)
+    bb = c.body.bounding_box()
+    assert bb.size.X <= P.usable_volume_mm[0] and bb.size.Y <= P.usable_volume_mm[1]
+
+
+def test_magnet_size_list():
+    c = cp.make("magnet", P, size="8x2, 3x1")
+    assert c.name == "coupon-magnet-8x2-3x1" and c.bodies == 2
 
 
 def test_magnet_pockets():
     c = cp.make("magnet", P, d=6, h=2)
     assert c.key == "magnet_fit_mm" and c.name == "coupon-magnet-d6x2"
-    depth = math.ceil(2 / P.layer_mm - 1e-9) * P.layer_mm
+    depth = mg.pocket_depth(mg.Magnet(6, 2), P)
     floor = cp.magnet_floor(P)
     assert floor >= P.min_wall_mm
-    top = c.body.bounding_box().max.Z
-    assert top == pytest.approx(floor + depth, abs=0.01) or top > floor + depth   # labels stand above
     cs = cp.values(0.0, 0.3, 0.05)
     assert _hole_diameters(c.body, floor + depth / 2) == pytest.approx([6 + x for x in cs], abs=0.05)
     push = _hole_diameters(c.body, floor / 2)                 # push-out holes under each pocket
@@ -168,6 +187,8 @@ def workshop(tmp_path, monkeypatch):
     (["press"], "coupon-press-d8"),
     (["slide"], "coupon-slide-d8"),
     (["magnet", "--d", "6", "--h", "2"], "coupon-magnet-d6x2"),
+    (["magnet"], "coupon-magnet-5x4-6x2-10x3"),
+    (["magnet", "--size", "8x2"], "coupon-magnet-8x2"),
     (["thread", "--size", "M6"], "coupon-thread-M6"),
 ])
 def test_cli_builds_each_feature(workshop, capsys, argv, name):
@@ -188,11 +209,11 @@ def test_cli_print_ready_and_range(workshop, capsys):
     assert (workshop / "calibration" / "coupons" / "out" / "coupon-hole-d8.print.json").exists()
 
 
-def test_cli_magnet_without_sizes_is_a_user_error(workshop, capsys):
+def test_cli_magnet_bad_size_is_a_user_error(workshop, capsys):
     from cad import main
 
-    assert main(["coupon", "magnet"]) == 2
-    assert "caliper" in capsys.readouterr().out
+    assert main(["coupon", "magnet", "--size", "5"]) == 2
+    assert "DxH" in capsys.readouterr().out
 
 
 def test_build_all_skips_coupons_folder():

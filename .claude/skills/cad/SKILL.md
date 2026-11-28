@@ -66,7 +66,7 @@ Every command runs from the project root as `uv run cad.py ...`.
 
 ## Tolerance calibration
 
-For a single fit, `uv run cad.py coupon <feature>` (`hole`, `press`, `slide`, `magnet --d 6 --h 2`, `thread --size M8`, range with `--from --to --step`) builds a labelled step series into `calibration/coupons/out/` and ends by naming the `printer.toml` key; read `calibration/coupons/README.md`. If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
+For a single fit, `uv run cad.py coupon <feature>` (`hole`, `press`, `slide`, `magnet` (default 5x4, 6x2, 10x3, or `--size 8x2`), `thread --size M8`, range with `--from --to --step`) builds a labelled step series into `calibration/coupons/out/` and ends by naming the `printer.toml` key; read `calibration/coupons/README.md`. If fits don't work out, the user prints `calibration/` (`uv run cad.py build calibration`) for plastic-in-plastic fits and `calibration/fit-test` for screws, shafts and threads against metal. How to read the result is in `calibration/README.md`. The user names the values that fit, and we write them into `[tolerances]` in `printer.toml`. Per-plastic values go into `clearance_add_mm` of the right `[materials.*]` section. Models don't change.
 
 ## Cheat sheet
 
@@ -79,6 +79,7 @@ from cadlib.shared import load_module  # a sibling part's shared code: load_modu
 from cadlib.logo import place_logo  # the workshop logo on a flat face: raised or sunk
 from cadlib.threads import internal_thread_tube   # threads for printing; down=-1/+1: the side facing the bed gets a 45° flank
 from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
+from cadlib.magnets import magnet, pocket   # disc magnet pocket: body -= Pos(x, y, z_top) * pocket(magnet("6x2"), p)
 from cadlib import opengrid as og   # multiconnect_slot, snap, grid_positions, require_cells, require_back: hang a part on an openGrid board
 ```
 

@@ -10,7 +10,7 @@ into the `printer.toml` key the build names at the end.
 | `hole` | a metal rod or drill shank of `--d` (8) | 0.0 to 0.5 by 0.1 | `hole_clearance_mm` |
 | `press` | the printed key (exact `--d` pin and ring) | 0.0 to 0.25 by 0.05 | `press_fit_mm` |
 | `slide` | the printed key | 0.15 to 0.5 by 0.05 | `slide_fit_mm` |
-| `magnet` | your magnets: `--d` and `--h` measured with a caliper (required) | 0.0 to 0.3 by 0.05 | `magnet_fit_mm` |
+| `magnet` | your magnets: one strip per `--size` (nominal DxH, default 5x4, 6x2, 10x3), or one measured `--d`/`--h` | 0.0 to 0.3 by 0.05 | `magnet_fit_mm` |
 | `thread` | a real bolt of `--size`: M6, M8 (default), M10, M12 | 0.2 to 0.5 by 0.05 | `thread_clearance_mm` |
 
 Options: `--from`, `--to`, `--step` change the range, `--nozzle`, `--material` the profile,
@@ -19,7 +19,8 @@ PLA: `[tolerances]` hold the PLA values and each plastic adds its `clearance_add
 tells you what to subtract. Printed threads below M6 don't build yet. Examples:
 
 ```bash
-uv run cad.py coupon magnet --d 6.0 --h 2.0
+uv run cad.py coupon magnet
+uv run cad.py coupon magnet --size 8x2,8x3
 uv run cad.py coupon thread --size M6 --from 0.25 --to 0.45
 ```
 
