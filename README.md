@@ -28,7 +28,8 @@ The first run after installing can take a few minutes on Windows while Defender 
 |---|---|
 | `uv run cad.py new part <name>` | create `parts/<name>/` from the template |
 | `uv run cad.py new remix <name> <file>` | create `remix/<name>/`: the original is copied into `source/` read-only, and `inspect` runs right away |
-| `uv run cad.py build <folder>` | build: STEP, STL, 3MF, PNG and the check report in `<folder>/out/` |
+| `uv run cad.py build <folder>` | build: STEP, STL, 3MF, PNG, the 3D preview and the check report in `<folder>/out/` |
+| `uv run cad.py mesh-preview <folder>` or `--all` | the light 3D preview (`out/<name>.preview.bin`) from built 3MFs, without rebuilding |
 | `uv run cad.py build --all` | build every model, one line each; the failures in full |
 | `uv run cad.py preview <folder or file>` | only the PNG (`--section x/y/z` adds a section) |
 | `uv run cad.py check <file>` | checks of any STL, 3MF or STEP, someone else's too |
@@ -131,6 +132,8 @@ tests/              pytest
 ```
 
 ## Through Telegram (multiclaude)
+
+Every build also writes `out/<name>.preview.bin`: the model decimated to at most 60,000 triangles in a small binary format (`cadlib/webpreview.py`), which the Print tab of bambu-mcp's Mini App turns in 3D on a phone. A kit's preview keeps each object with its plate. For models built before this, `uv run cad.py mesh-preview --all` writes them from the 3MFs.
 
 The workshop installs as an add-in for [multiclaude](https://github.com/korsicheg/multiclaude), a Telegram bot that gives each person their own Claude Code. Then a part can be ordered from the chat, and the assistant sends back the PNG preview and a print-ready 3MF. Setup is in [multiclaude/addon/README.md](multiclaude/addon/README.md). An Ubuntu server also needs `libgl1`; the add-in's `setup` installs it. On a weak laptop a build takes 10–60 s and up to 0.7 GB of memory, a downloaded model of a million triangles up to 1.2 GB.
 
