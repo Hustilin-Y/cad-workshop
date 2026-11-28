@@ -122,3 +122,24 @@ def test_mesh_preview_all_walks_the_model_folders(tmp_path, capsys, monkeypatch)
     assert main(["mesh-preview", "--all"]) == 0
     assert (tmp_path / "parts" / "a" / "out" / "a.preview.bin").is_file()
     assert (tmp_path / "remix" / "b" / "out" / "b.preview.bin").is_file()
+
+
+def test_a_mesh_the_decimator_cannot_reduce_still_fits_and_ends(tmp_path, monkeypatch):
+    """Found on caulk-gun (1.29M faces): fast-simplification stalls far above the target. The
+    preview must still finish under the budget (vertex clustering), never loop."""
+    import fast_simplification
+
+    calls = []
+
+    def stalled(points, faces, target_reduction):
+        calls.append(target_reduction)
+        return points, faces  # reduces nothing, like a mesh it can't collapse
+
+    monkeypatch.setattr(fast_simplification, "simplify", stalled)
+    sphere = trimesh.creation.icosphere(subdivisions=7, radius=50.0)
+    path = tmp_path / "stuck.preview.bin"
+    info = write_preview([(sphere, None, 0)], path)
+    assert info.triangles <= MAX_TRIANGLES and len(calls) <= 3
+    data = read_preview(path)
+    assert np.allclose(data["bbox"][:3], sphere.bounds[0], atol=0.1)
+    assert np.allclose(data["bbox"][3:], sphere.bounds[1], atol=0.1)
