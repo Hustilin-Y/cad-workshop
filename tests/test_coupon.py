@@ -138,8 +138,8 @@ def test_magnet_pockets():
 
 
 def test_magnet_fit_in_profile():
-    assert load_profile().magnet_fit_mm == pytest.approx(0.1)
-    assert load_profile(material="PETG").magnet_fit_mm == pytest.approx(0.15)
+    assert load_profile().magnet_fit_mm == pytest.approx(0.05)                   # magnet coupon, 2026-11-28
+    assert load_profile(material="PETG").magnet_fit_mm == pytest.approx(0.10)
 
 
 # --- thread --------------------------------------------------------------------------------------

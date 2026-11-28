@@ -27,8 +27,9 @@ layer_mm = 0.4
 hole_clearance_mm = 0.2      # added to the diameter of a hole for a shaft/screw
 press_fit_mm = 0.05
 slide_fit_mm = 0.3
-magnet_fit_mm = 0.1          # on a disc magnet's nominal Ø for its pocket (cadlib.magnets); starting guess until the magnet coupon
+magnet_fit_mm = 0.05         # on a disc magnet's nominal Ø for its pocket (cadlib.magnets); magnet coupon 2026-11-28: 6x2 in PETG tight at 0.05, ideal at 0.10, minus PETG's 0.05
 thread_clearance_mm = 0.35   # on the major Ø of a printed nut; fit-test M8 rings (ISO profile): 0.25 tight, 0.4 runs well
+gridfinity_joint_mm = 0.1    # per joint between Gridfinity plate pieces laid in a drawer (printed pieces come out a little over size)
 
 # Per-plastic additions to the tolerances (added to [tolerances]) and hints.
 [materials.PLA]

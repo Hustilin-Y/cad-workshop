@@ -272,6 +272,11 @@ built later from these modules on request).
   nozzle): the slot piece and the snap tile fit the official board, snap and connector, no change.
 - Phase 2 (coupon generator) is committed. Thread coupons cover M6 to M12 (see 11a). After it:
   `cadlib.magnets` (nominal disc sizes, pocket tool) and a multi-size `magnet` coupon.
+- Phase 3 (Gridfinity) is built and verified in code, uncommitted until the owner reviews it. Owner's
+  calls (2026-11-28): no Gridfinity parts from others, the base fits their drawers (first one inside
+  525 × 296 mm: 12 × 7 cells, 6 pieces), bins are not held down, so no magnets or screws, and no
+  printed test pieces. Screw plates are left out. Spec
+  `docs/superpowers/specs/2026-11-28-gridfinity-design.md`, plan `plans/2026-11-28-gridfinity.md`.
 
 ## Open questions before phase 2 (coupon generator)
 
@@ -281,7 +286,8 @@ built later from these modules on request).
 
 ## Open questions before phase 3 (Gridfinity)
 
-1. The `magnet` coupon result (`uv run cad.py coupon magnet`): printed, waits for magnets.
-2. Screws, if plates are screwed down: type and size.
-3. Gridfinity bins or plates from others at home to fit against: which ones.
-4. Sizes wanted: plates (cells or the drawer's inside size) and bins (cells, height units).
+1. The `magnet` coupon result: answered for 6x2 (PETG ideal at 0.10, `magnet_fit_mm` = 0.05). 5x4 and
+   10x3 not tried yet.
+2. Screws: answered, not needed (bins are not held down).
+3. Gridfinity from others: answered, none.
+4. Sizes: the first drawer is 525 × 296 inside. Bin sizes come with the first bins task.

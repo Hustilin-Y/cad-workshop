@@ -80,6 +80,7 @@ from cadlib.logo import place_logo  # the workshop logo on a flat face: raised o
 from cadlib.threads import internal_thread_tube   # threads for printing; down=-1/+1: the side facing the bed gets a 45° flank
 from cadlib.finish import soften, bevel           # roundings and chamfers that respect the print orientation
 from cadlib.magnets import magnet, pocket   # disc magnet pocket: body -= Pos(x, y, z_top) * pocket(magnet("6x2"), p)
+from cadlib import gridfinity as gf   # drawer_base(x, y, p) → pieces for build(p) to return; bin_body(cx, cy, units, p, divisions=, shelf=, label=, solid=, pockets=[gf.Pocket(...)])
 from cadlib import opengrid as og   # multiconnect_slot, snap, grid_positions, require_cells, require_back: hang a part on an openGrid board
 ```
 

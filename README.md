@@ -83,12 +83,14 @@ Tolerances and the nozzle (0.2 / 0.4 / 0.6 / 0.8) and plastic (PLA, PETG, ABS, A
 
 `cadlib.opengrid` puts an openGrid interface on a part's back: a Multiconnect slot (`multiconnect_slot`, open end down, with an optional snap-in detent and entry flare) to lower onto an official Multiconnect snap in a board, or an openGrid snap (`snap`, full or Lite) to clip straight into a board cell. Cells are 28 mm (`grid_positions`). The sizes are the openGrid standard, clearances included, so they don't follow `printer.toml`. Print the test pieces (`uv run cad.py build calibration/opengrid`, about 10 g) and try them on a board first.
 
+`cadlib.gridfinity` makes Gridfinity for a drawer: `drawer_base(inside_x, inside_y, p)` fits whole 42 mm cells into the drawer's inside size, fills the rest with a solid rim, leaves `slide_fit_mm` to the walls plus `gridfinity_joint_mm` per joint, and splits the base into pieces that fit the bed (laid side by side, the drawer holds them). `bin_body(cells_x, cells_y, units, p, ...)` makes bins: compartments, a label shelf with debossed text, magnet pockets, or a solid insert with tool pockets (`Pocket`: rect, circle, slot, finger notch). The standard's sizes and clearances are kept, so bins from others fit. A model whose `build(p)` returns pieces `[(name, body, count), ...]` builds each piece (`out/<name>-<piece>.*`) and one `out/<name>.3mf` with a plate per copy.
+
 ## Layout
 
 ```
 cad.py              CLI
 printer.toml        printer, nozzles, plastics, tolerances, filament estimate
-cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, coupon, magnets, config
+cadlib/             export, preview, checks, orient, estimate, info, fasteners, mesh, text, threads, finish, logo, opengrid, gridfinity, coupon, magnets, config
 parts/<name>/       parts from scratch: model.py, README.md, out/
 remix/<name>/       remixes: source/ (the original), remix.py, SOURCE.md, README.md, out/
 calibration/        tolerance gauge; fit-test/ for fits against metal; opengrid/ test pieces for an openGrid board; coupons/ output of `cad.py coupon`
@@ -139,4 +141,5 @@ No connection to the printer, no slicing, no downloading by link, no multi-colou
 The code is under the [MIT licence](LICENSE). It does not cover:
 - **the workshop's logo** (a shiba inu with a bow tie). It is the owner's personal mark: the logo's picture and contours are not in the repository, and the logo may not be used without permission. Without the logo data `cadlib/logo.py` builds parts without it, and the logo tests are skipped;
 - **remixes of other people's models**: each model has its own licence, given in the remix's `SOURCE.md`.
+- **Gridfinity**: `cadlib/gridfinity.py` is our own code; its standard sizes are taken from [kennetek/gridfinity-rebuilt-openscad](https://github.com/kennetek/gridfinity-rebuilt-openscad) (MIT License, Copyright (c) 2023 Kenneth Hodson), itself on Gridfinity by Zachary Freedman (MIT).
 - **the openGrid and Multiconnect designs**: `cadlib/opengrid.py` is our own code, but its dimensions are derived from the modeling files of [openGrid - Wall/Desk mounting framework/ecosystem](https://makerworld.com/en/models/1179191-opengrid-wall-desk-mounting-framework-ecosystem) by David D, licensed [CC BY](https://creativecommons.org/licenses/by/4.0/). Their files are not in this repository. A part that uses the interface says so in its README: "openGrid/Multiconnect interface: dimensions from openGrid by David D, CC BY".
